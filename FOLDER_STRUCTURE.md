@@ -24,10 +24,7 @@
 │   ├── lib/                        # Pure functions / utilities
 │   │   ├── cn.ts                   # shadcn/ui className merger (twMerge + clsx)
 │   │   ├── env.ts                  # Zod-validierte process.env-Wrappers
-│   │   ├── supabase/
-│   │   │   ├── client.ts           # Browser-side Supabase
-│   │   │   ├── server.ts           # Server-side Supabase (RSC + actions)
-│   │   │   └── middleware.ts       # Auth cookie refresh
+│   │   ├── db.ts                   # better-sqlite3 connection (server-side)
 │   │   └── <helpers>
 │   └── types/                      # Globale TS-Types (oder per-file)
 ├── tests/
@@ -37,10 +34,8 @@
 │   └── e2e/                        # Playwright-Suite
 │       ├── smoke.spec.ts           # first E2E (home page loads)
 │       └── playwright.config.ts
-├── supabase/                       # only wenn Backend = Supabase
-│   ├── migrations/                 # *.sql mit timestamps
-│   ├── seed/                       # ts-node seed scripts
-│   └── tests/                      # SQL smoke tests (pgTAP optional)
+├── data/                           # only wenn Backend = SQLite
+│   └── fontgrep.db                 # gitignored SQLite file
 ├── scripts/                        # bash scripts (IDEMPOTENT)
 │   ├── init.sh                     # one-shot env setup (npm, env vars)
 │   ├── migrate.sh                  # db migration runner
@@ -82,7 +77,7 @@
 | Feature-Komposites | `src/components/features/<feature>/` |
 | Lucide-Icons | `import from "lucide-react"` |
 | Pure helpers | `src/lib/` (no React imports) |
-| Supabase-clients | `src/lib/supabase/{client,server,middleware}.ts` |
+| SQLite access | `src/lib/db.ts` (server-side only) |
 | Env-validation | `src/lib/env.ts` (`z.object({...}).parse(process.env)`) |
 | TypeScript types | inline OR `src/types/` für globals |
 | Migrations | `supabase/migrations/*.sql` |
@@ -118,6 +113,6 @@ uploads/    # user media
 | Neue shadcn-Komponente | `<PKG> dlx shadcn@latest add <name>` |
 | Neuer Backend-Service | `scripts/<service>.sh` + ADR in `docs/decisions/` |
 | Neue Route-Page | `src/app/<route>/page.tsx` (App Router default) |
-| Neue Supabase-Table | `npx supabase migration new <name>` + `push` |
+| Neue SQLite-Table | `scripts/migrations/NNN-<name>.sql` + `scripts/migrate.sh` |
 | Neue Umgebungsvariable | `src/lib/env.ts` schema updaten + `.env.example` ergänzen |
 | Theme-Wechsel | `<PKG> dlx shadcn@latest apply <preset>` (NOVEMBER 2025+) |

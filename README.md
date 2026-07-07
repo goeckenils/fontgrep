@@ -10,7 +10,7 @@ github-font-indexer install 2>&1 | tee /tmp/install.log
 
 # Env-Vorbereitung
 cp .env.example .env
-# Editiere .env mit deinen Werten (Keys aus Supabase, etc.)
+# Editiere .env mit deinen Werten (GitHub Token optional, für höhere Rate-Limits)
 
 # Dev-Server
 <PKG> dev        # http://localhost:3000
@@ -40,7 +40,7 @@ Die Ergebnisse werden normalisiert (Format-Erkennung, Repository, Pfad, Lizenz) 
 
 - **Frontend:** Next.js 16 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, Lucide
 - **Animation:** tw-animate-css (klein) + motion (mittel) / GSAP (komplex, siehe STACK.md)
-- **Backend:** Supabase Postgres + RLS / pure Postgres / FastAPI sidecar (siehe STACK.md)
+- **Backend:** SQLite (better-sqlite3, siehe STACK.md)
 - **Tooling:** pnpm, Vitest, Playwright, Prettier + Tailwind-class-sort
 - **Quality:** ESLint flat, tsc --noEmit, Prettier
 
@@ -56,9 +56,7 @@ Die Ergebnisse werden normalisiert (Format-Erkennung, Repository, Pfad, Lizenz) 
 ├── src/types/                # TypeScript types
 ├── tests/units/              # Unit & integration tests (vitest)
 ├── tests/e2e/                # End-to-end tests (playwright)
-├── supabase/migrations/      # SQL migrations
-├── supabase/seed/            # TypeScript seed scripts
-├── supabase/tests/           # SQL test scripts
+├── data/                     # SQLite DB file (gitignored)
 ├── scripts/                  # Build/migration/backup scripts (bash)
 ├── docs/decisions/           # Architecture Decision Records
 ├── AGENTS.md                 # Agent-Workflow (MANDATORY-Pfad zur Orientierung)

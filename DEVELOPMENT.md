@@ -16,8 +16,7 @@
 
 | Tool | Use |
 |---|---|
-| **Supabase CLI** | For local DB & migrations on Supabase projects |
-| **Docker / podman** | If you run Postgres locally |
+| **better-sqlite3** | Lokale SQLite-DB für Kuratierung (server-side) |
 | **Playwright** | `npx playwright install --with-deps chromium` |
 | **Tailscale** | VPS-/Mobile-Access via private network |
 
@@ -40,18 +39,12 @@ cp .env.example .env.local
 
 # 4. Env lokales Set-up
 # Editiere .env.local:
-# - NEXT_PUBLIC_SUPABASE_URL
-# - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY
-# - NEXT_PUBLIC_SITE_URL (default http://localhost:3000)
+# - GITHUB_TOKEN (optional, höhere Rate-Limits für die Search-API)
 
-# 5. DB-Migrationen anwenden (falls Supabase-Backend)
-pnpm exec supabase db push   # oder scripts/migrate.sh
+# 5. (optional) Lokale SQLite-DB für Kuratierung anlegen
+pnpm exec tsx scripts/migrate.ts   # erstellt data/fontgrep.db + Schema
 
-# 6. (optional) seed
-pnpm exec ts-node supabase/seed_users.ts
-# oder pnpm run seed
-
-# 7. Dev-Server starten
+# 6. Dev-Server starten
 PORT=3000 pnpm dev   # http://localhost:3000
 ```
 
@@ -85,14 +78,12 @@ pnpm e2e -- <test name>                   # spezifischer test
 pnpm e2e:debug                            # UI debug inspiziert
 ```
 
-### Database (Supabase)
+### Database (SQLite)
+
 ```bash
-pnpm exec supabase start                  # lokales supabase
-pnpm exec supabase status                 # container-status
-pnpm exec supabase migration new <name>   # neue migration
-pnpm exec supabase db push                # migrationen -> remote
-pnpm exec supabase db reset               # reset local (⚠ löscht data)
-pnpm exec supabase gen types typescript   # regenerated types
+pnpm exec tsx scripts/migrate.ts              # Schema anwenden (idempotent)
+pnpm exec tsx scripts/seed.ts                 # optional seed
+rm -f data/fontgrep.db                        # reset (⚠ löscht Daten)
 ```
 
 ### Process / Service
@@ -140,9 +131,10 @@ pnpm build
 - shadcn/ui: kopie geht on each `add` lokal ins repo (customized variant)
 - Bei größeren Updates: `pnpm dlx shadcn@latest add <x> --overwrite` (vorsichtig)
 
-### Supabase Auth Callback läuft nicht
-
-`NEXT_PUBLIC_SITE_URL` muss die richtige Origin sein (z.B. `https://app.<domain>.de`). Für Dev: `http://localhost:3000`.
+### SQLite-Datei wächst / ist korrupt
+```bash
+rm -f data/fontgrep.db && pnpm exec tsx scripts/migrate.ts
+```
 
 ### Tailwind v4-class kollidiert mit v3-Doku
 

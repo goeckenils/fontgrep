@@ -27,17 +27,14 @@
 
 ## Backend
 
-**Variante A — klein/mittel**: SQLite (NextAuth + Prisma) oder direct Postgres.
+**Standard — lokal & serverless-freundlich**: **SQLite** via `better-sqlite3` (synchronous, zero-daemon, file-based). Kein externer Datenbank-Service nötig.
 
-**Variante B — Standard**: Postgres via **Supabase** mit:
-- **Postgres** 15.x (managed by Supabase)
-- **Supabase Auth** (RSC + middleware cookie refresh)
-- **Supabase Storage** (Proof-Fotos, etc.)
-- **Realtime** (subscriptions)
-- **Row Level Security** (RLS, RLS-Policies pro Tabelle)
-- **Materialized views** für Lieaderboards / Aggregates
+- **DB-Datei**: `data/fontgrep.db` (gitignored, siehe `.gitignore`)
+- **Migrationen**: idempotente SQL-Skripte in `scripts/migrations/*.sql` (angewendet via `scripts/migrate.sh`)
+- **Schema-Typen**: manuell in `src/types/` oder via `better-sqlite3` Row-Typen
+- **Kein Auth-Provider** nötig — Tool ist read-only gegen die GitHub-Suche, Kuratierung optional lokal
 
-**Variante C — heavy ML-ops**: Separate Python 3.11 FastAPI sidecar (uv oder poetry), pro Microservice-Pattern, kommuniziert über http/JSON.
+> Supabase/Postgres entfällt bewusst: das Tool braucht keinen managed DB-Service, RLS oder Realtime. SQLite hält das Deploy schlank (Vercel Serverless + mounted volume oder rein stateless).
 
 ## Type / State / Validation
 
@@ -46,8 +43,7 @@
 | **Zod** | Input-Validation, schema source of truth |
 | **React Hook Form** | Forms, preferably mit `zodResolver` |
 | **Tanstack Query** | Server state caching, optimistic updates |
-| **Supabase `createClient()`** | Server- und Client-side DB access (dual pattern) |
-| **`generate` patterns** | TS types via `supabase gen types typescript` |
+| **better-sqlite3** | Synchronous SQLite access (server-side only) |
 
 ## Infrastruktur
 

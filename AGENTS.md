@@ -8,7 +8,7 @@
 - **Type/Validation:** Zod, RHF, TanStack Query
 - **Styling/Anims:** tw-animate-css (klein), motion (mittel), GSAP (komplex) — nie alle drei parallel
 - **Icons:** Lucide React (KEINE emojis)
-- **Backend:** je nach Projekt (Supabase Postgres + RLS, SQLite, FastAPI sidecar — siehe `STACK.md`)
+- **Backend:** SQLite (better-sqlite3, siehe `STACK.md`)
 - **Tests:** Vitest (unit + integration), Playwright (E2E)
 - **Linting:** ESLint flat, Prettier mit prettier-plugin-tailwindcss
 
@@ -16,11 +16,11 @@
 
 - `src/app/`        — App-Router-Pages, Route-Handler, Server-Actions
 - `src/components/` — UI-Components (shadcn/ui unter `src/components/ui/`)
-- `src/lib/`        — Pure functions, `cn.ts` merger, `env.ts` validator, supabase clients
+- `src/lib/`        — Pure functions, `cn.ts` merger, `env.ts` validator, `db.ts` SQLite connection
 - `src/types/`      — TS-Types (oder inline)
 - `tests/units/`    — Vitest-Suite
 - `tests/e2e/`      — Playwright-Suite
-- `supabase/`       — migrations / seed / tests (nur bei Supabase-Backend)
+- `data/`           — SQLite DB file (gitignored, nur bei lokaler Kuratierung)
 - `scripts/`        — bash: migrations, backup, deploy hooks
 
 ## Agent Rules (MANDATORY)
