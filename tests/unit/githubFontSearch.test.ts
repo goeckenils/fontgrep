@@ -1,0 +1,117 @@
+import { describe, it, expect } from "vitest";
+import {
+  buildGitHubFontQuery,
+  detectFontFormat,
+  normalizeGitHubItem,
+  githubSearchUrl,
+} from "@/lib/githubFontSearch";
+import type { GitHubCodeSearchItem } from "@/types/fontDiscovery";
+
+describe("detectFontFormat", () => {
+  it("detects common binary formats by extension", () => {
+    expect(detectFontFormat("fonts/Inter.ttf")).toBe("ttf");
+    expect(detectFontFormat("fonts/Inter.otf")).toBe("otf");
+    expect(detectFontFormat("fonts/Inter.woff")).toBe("woff");
+    expect(detectFontFormat("fonts/Inter.WOFF2")).toBe("woff2");
+    expect(detectFontFormat("fonts/Inter.eot")).toBe("eot");
+  });
+
+  it("detects svg", () => {
+    expect(detectFontFormat("icons/logo.svg")).toBe("svg");
+  });
+
+  it("detects variable fonts by name", () => {
+    expect(detectFontFormat("fonts/Inter-Variable.ttf")).toBe("variable");
+    expect(detectFontFormat("vendor/vf.woff2")).toBe("variable");
+  });
+
+  it("falls back to unknown", () => {
+    expect(detectFontFormat("README.md")).toBe("unknown");
+  });
+});
+
+describe("buildGitHubFontQuery", () => {
+  it("filename mode quotes multi-word terms and scopes to fonts path", () => {
+    expect(buildGitHubFontQuery({ query: "Inter", mode: "filename" })).toBe('Inter path:fonts');
+    expect(buildGitHubFontQuery({ query: "Open Sans", mode: "filename" })).toBe(
+      '"Open Sans" path:fonts',
+    );
+  });
+
+  it("extension mode ORs the font extensions", () => {
+    const q = buildGitHubFontQuery({ query: "Inter", mode: "extension" });
+    expect(q).toContain("Inter");
+    expect(q).toContain("extension:ttf OR extension:otf OR extension:woff OR extension:woff2");
+  });
+
+  it("css mode wraps font-family and defaults to language:CSS", () => {
+    const q = buildGitHubFontQuery({ query: "Inter", mode: "css" });
+    expect(q).toBe('"font-family: Inter" language:CSS');
+  });
+
+  it("css mode omits language filter when language is set explicitly", () => {
+    const q = buildGitHubFontQuery({ query: "Inter", mode: "css", language: "CSS" });
+    expect(q).toBe('"font-family: Inter"');
+  });
+
+  it("license mode scopes to license files", () => {
+    const q = buildGitHubFontQuery({ query: "OFL", mode: "license" });
+    expect(q).toContain("OFL");
+    expect(q).toContain("(path:LICENSE OR path:OFL.txt OR path:FONTLOG.txt)");
+  });
+
+  it("throws when query is empty", () => {
+    expect(() => buildGitHubFontQuery({ query: "   ", mode: "filename" })).toThrow();
+  });
+});
+
+describe("normalizeGitHubItem", () => {
+  const item: GitHubCodeSearchItem = {
+    name: "Inter.ttf",
+    path: "src/fonts/Inter.ttf",
+    html_url: "https://github.com/foo/bar/blob/main/src/fonts/Inter.ttf",
+    repository: {
+      full_name: "foo/bar",
+      html_url: "https://github.com/foo/bar",
+      license: { key: "ofl", name: "Other", spdx_id: "OFL-1.1" },
+    },
+  };
+
+  it("maps item to discovery result and derives format + license", () => {
+    const r = normalizeGitHubItem(item);
+    expect(r).toEqual({
+      repository: "foo/bar",
+      path: "src/fonts/Inter.ttf",
+      fileName: "Inter.ttf",
+      url: "https://github.com/foo/bar/blob/main/src/fonts/Inter.ttf",
+      format: "ttf",
+      licenseName: "OFL-1.1",
+    });
+  });
+
+  it("prefers spdx_id over name for license", () => {
+    const r = normalizeGitHubItem(item);
+    expect(r.licenseName).toBe("OFL-1.1");
+  });
+
+  it("returns undefined license when none present", () => {
+    const r = normalizeGitHubItem({ ...item, repository: { ...item.repository, license: null } });
+    expect(r.licenseName).toBeUndefined();
+  });
+});
+
+describe("githubSearchUrl", () => {
+  it("builds a code-search url with pagination and sort", () => {
+    const url = githubSearchUrl("Inter path:fonts", 10);
+    expect(url).toContain("https://api.github.com/search/code?");
+    expect(url).toContain("q=Inter+path%3Afonts");
+    expect(url).toContain("per_page=10");
+    expect(url).toContain("sort=indexed");
+    expect(url).toContain("order=desc");
+  });
+
+  it("clamps limit to [1, 100]", () => {
+    expect(githubSearchUrl("x", 0).includes("per_page=1")).toBe(true);
+    expect(githubSearchUrl("x", 999).includes("per_page=100")).toBe(true);
+  });
+});
