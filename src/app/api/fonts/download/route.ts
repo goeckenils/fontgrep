@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import {
-  getFontsBySourceUrl,
-  insertFont,
-  FONTS_DIR_PATH,
-} from "@/lib/db";
+import { getFontsBySourceUrl, insertFont, FONTS_DIR_PATH } from "@/lib/db";
+import { validateFontFile } from "@/lib/fontValidate";
+import { parseFontBuffer } from "@/lib/fontMeta";
 import type { FontFormat } from "@/types/fontDiscovery";
 
 export const dynamic = "force-dynamic";
+
+const MAX_FONT_SIZE_MB = Number(process.env.MAX_FONT_SIZE_MB) || 50;
 
 const EXT_BY_FORMAT: Record<string, string> = {
   ttf: "ttf",
@@ -49,7 +49,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "repository and path are required" }, { status: 400 });
   }
 
-  const sourceUrl = `https://github.com/${body.repository}/blob/main/${body.path}`;
+  const fetched = await fetchFont(body.repository, body.path);
+  if (!fetched) {
+    return NextResponse.json(
+      { error: "Could not download font file from GitHub" },
+      { status: 502 }
+    );
+  }
+
+  // Use the actual branch that fetchFont resolved, not hardcoded "main" (fixes master-branch dedup).
+  const sourceUrl = `https://github.com/${body.repository}/blob/${fetched.branch}/${body.path}`;
   const existing = getFontsBySourceUrl(sourceUrl);
   if (existing) {
     return NextResponse.json({
@@ -59,20 +68,22 @@ export async function POST(request: Request) {
     });
   }
 
-  const fetched = await fetchFont(body.repository, body.path);
-  if (!fetched) {
-    return NextResponse.json(
-      { error: "Could not download font file from GitHub" },
-      { status: 502 }
-    );
+  const buf = Buffer.from(await fetched.res.arrayBuffer());
+
+  const validation = validateFontFile(buf, body.format ?? "unknown", MAX_FONT_SIZE_MB * 1024 * 1024);
+  if (!validation.valid) {
+    const status = validation.error?.includes("size limit") ? 413 : 415;
+    return NextResponse.json({ error: validation.error }, { status });
   }
 
   const ext = EXT_BY_FORMAT[body.format ?? "unknown"];
   const fileName = `${randomUUID()}.${ext}`;
   const localPath = path.join(FONTS_DIR_PATH, fileName);
   const publicPath = `/fonts/${fileName}`;
-  const buf = Buffer.from(await fetched.res.arrayBuffer());
   await fs.writeFile(localPath, buf);
+
+  // Parse metadata from the downloaded binary.
+  const meta = parseFontBuffer(buf);
 
   const row = insertFont({
     family: body.fileName ?? body.path.split("/").pop() ?? "unknown",
@@ -81,6 +92,11 @@ export async function POST(request: Request) {
     public_path: publicPath,
     format: body.format ?? "unknown",
     license: body.license ?? null,
+    real_family: meta.family ?? null,
+    weight: meta.weight ?? null,
+    style: meta.style ?? null,
+    is_variable: meta.isVariable,
+    designer: meta.designer ?? null,
   });
 
   return NextResponse.json({
@@ -89,5 +105,13 @@ export async function POST(request: Request) {
     format: row.format,
     publicPath: row.public_path,
     alreadyExists: false,
+    metadata: {
+      realFamily: meta.family,
+      weight: meta.weight,
+      style: meta.style,
+      isVariable: meta.isVariable,
+      designer: meta.designer,
+      axes: meta.axes,
+    },
   });
 }
