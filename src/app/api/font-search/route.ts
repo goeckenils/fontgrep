@@ -17,8 +17,19 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const detail = await response.text();
+      if (response.status === 401) {
+        return NextResponse.json(
+          {
+            error: "github_auth_required",
+            message:
+              "GitHub rejected the request. Set GITHUB_TOKEN in your .env (a fine-grained or classic PAT) to enable search.",
+          },
+          { status: 401 },
+        );
+      }
       return NextResponse.json(
-        { error: "github_search_failed", status: response.status, detail: await response.text() },
+        { error: "github_search_failed", status: response.status, detail },
         { status: response.status },
       );
     }

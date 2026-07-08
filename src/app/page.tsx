@@ -58,8 +58,12 @@ export default function Home() {
         body: JSON.stringify({ query: term, mode, limit: 30 }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
-        throw new Error(body.error ?? body.detail ?? `Request failed (${res.status})`);
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+          detail?: string;
+        };
+        throw new Error(body.message ?? body.error ?? body.detail ?? `Request failed (${res.status})`);
       }
       const json = (await res.json()) as SearchResponse;
       setData(json);
