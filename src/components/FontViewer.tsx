@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Download } from "lucide-react";
+import { Loader2, Download, ArrowLeft } from "lucide-react";
 
 export interface ViewerFont {
   id?: number;
@@ -15,11 +15,11 @@ export interface ViewerFont {
   repository?: string;
   path?: string;
   license?: string;
-  /** URL that serves the font binary (e.g. /api/font-file/<id>) */
-  localPath?: string;
+  /** Public URL that serves the font binary (e.g. /fonts/<hash>.woff2) */
+  publicPath?: string;
 }
 
-export function FontViewer({ font }: { font: ViewerFont }) {
+export function FontViewer({ font, onClose }: { font: ViewerFont; onClose: () => void }) {
   const [previewText, setPreviewText] = useState(
     "The quick brown fox jumps over the lazy dog"
   );
@@ -27,7 +27,7 @@ export function FontViewer({ font }: { font: ViewerFont }) {
   const [weight, setWeight] = useState(400);
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(font.id != null);
-  const [fontUrl, setFontUrl] = useState<string | null>(font.localPath ?? null);
+  const [fontUrl, setFontUrl] = useState<string | null>(font.publicPath ?? null);
   const familyName = `fg-viewer-${useId().replace(/[^a-z0-9]/gi, "")}`;
 
   // Register a @font-face rule pointing at the served binary.
@@ -70,7 +70,7 @@ export function FontViewer({ font }: { font: ViewerFont }) {
       });
       if (!res.ok) throw new Error("download failed");
       const json = await res.json();
-      setFontUrl(json.localPath ?? fontUrl);
+      setFontUrl(json.publicPath ?? fontUrl);
       setDownloaded(true);
     } catch {
       // ignore — preview still shows from remote
@@ -83,6 +83,10 @@ export function FontViewer({ font }: { font: ViewerFont }) {
     <div className="flex flex-col gap-4 rounded-xl border p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={onClose} data-icon="inline-start">
+            <ArrowLeft className="size-4" />
+            Back
+          </Button>
           <span className="font-medium">{font.family}</span>
           <Badge variant="outline" className="uppercase">
             {font.format}

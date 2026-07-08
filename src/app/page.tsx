@@ -175,71 +175,58 @@ export default function Home() {
           </p>
         </header>
 
-        <Tabs
-          value={tab}
-          onValueChange={handleTabChange}
-        >
-          <TabsList>
-            <TabsTrigger value="discover" data-icon="inline-start">
-              <Sparkles className="size-4" />
-              Discover
-            </TabsTrigger>
-            <TabsTrigger value="search" data-icon="inline-start">
-              <Search className="size-4" />
-              Search
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {tab === "discover" ? (
-          <DiscoverView
-            fonts={discovered}
-            loading={browseLoading}
-            loadingMore={loadingMore}
-            hasMore={hasMore}
-            onLoadMore={loadMore}
-            onSurprise={surpriseMe}
-            onOpenViewer={(f: DiscoveredFont) =>
-              setActiveViewer({
-                family: f.family,
-                fileName: f.family,
-                format: f.format,
-                repository: f.repository,
-                path: f.path,
-                license: f.license ?? undefined,
-              })
-            }
-          />
+        {activeViewer ? (
+          <FontViewer font={activeViewer} onClose={() => setActiveViewer(null)} />
         ) : (
-          <SearchView
-            query={query}
-            setQuery={setQuery}
-            mode={mode}
-            setMode={setMode}
-            loading={loading}
-            data={data}
-            error={error}
-            onSearch={runSearch}
-            onOpenViewer={setActiveViewer}
-          />
+          <>
+            <Tabs value={tab} onValueChange={handleTabChange}>
+              <TabsList>
+                <TabsTrigger value="discover" data-icon="inline-start">
+                  <Sparkles className="size-4" />
+                  Discover
+                </TabsTrigger>
+                <TabsTrigger value="search" data-icon="inline-start">
+                  <Search className="size-4" />
+                  Search
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {tab === "discover" ? (
+              <DiscoverView
+                fonts={discovered}
+                loading={browseLoading}
+                loadingMore={loadingMore}
+                hasMore={hasMore}
+                onLoadMore={loadMore}
+                onSurprise={surpriseMe}
+                onOpenViewer={(f: DiscoveredFont) =>
+                  setActiveViewer({
+                    family: f.family,
+                    fileName: f.family,
+                    format: f.format,
+                    repository: f.repository,
+                    path: f.path,
+                    license: f.license ?? undefined,
+                  })
+                }
+              />
+            ) : (
+              <SearchView
+                query={query}
+                setQuery={setQuery}
+                mode={mode}
+                setMode={setMode}
+                loading={loading}
+                data={data}
+                error={error}
+                onSearch={runSearch}
+                onOpenViewer={setActiveViewer}
+              />
+            )}
+          </>
         )}
       </main>
-
-      {activeViewer && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16">
-          <div className="relative w-full max-w-3xl">
-            <FontViewer font={activeViewer} />
-            <Button
-              size="sm"
-              variant="ghost"
-              className="absolute right-2 top-2"
-              onClick={() => setActiveViewer(null)}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
