@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { FontViewer, type ViewerFont } from "@/components/FontViewer";
 import { toast } from "sonner";
 import type { FontDiscoveryResult, FontFormat, FontSearchMode } from "@/types/fontDiscovery";
 
@@ -77,6 +78,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeViewer, setActiveViewer] = useState<ViewerFont | null>(null);
 
   const loadBrowse = useCallback(async () => {
     setBrowseLoading(true);
@@ -197,6 +199,9 @@ export default function Home() {
             data={data}
             error={error}
             onSearch={runSearch}
+            onOpenViewer={setActiveViewer}
+            activeViewer={activeViewer}
+            onCloseViewer={() => setActiveViewer(null)}
           />
         )}
       </main>
@@ -322,6 +327,9 @@ function SearchView({
   data,
   error,
   onSearch,
+  onOpenViewer,
+  activeViewer,
+  onCloseViewer,
 }: {
   query: string;
   setQuery: (q: string) => void;
@@ -331,9 +339,26 @@ function SearchView({
   data: SearchResponse | null;
   error: string | null;
   onSearch: () => void;
+  onOpenViewer: (font: ViewerFont) => void;
+  activeViewer: ViewerFont | null;
+  onCloseViewer: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
+      {activeViewer && (
+        <div className="relative">
+          <FontViewer font={activeViewer} />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="absolute right-2 top-2"
+            onClick={onCloseViewer}
+          >
+            Close
+          </Button>
+        </div>
+      )}
+
       <Tabs value={mode} onValueChange={(v) => setMode(v as FontSearchMode)}>
         <TabsList>
           {SEARCH_MODES.map((m) => (
@@ -386,7 +411,20 @@ function SearchView({
           <ScrollArea className="h-[55vh] rounded-lg border">
             <ul className="flex flex-col divide-y">
               {data.results.map((r, i) => (
-                <li key={`${r.repository}-${r.path}-${i}`} className="p-3">
+                <li
+                  key={`${r.repository}-${r.path}-${i}`}
+                  className="cursor-pointer p-3 transition-colors hover:bg-muted/50"
+                  onClick={() =>
+                    onOpenViewer({
+                      family: r.fileName,
+                      fileName: r.fileName,
+                      format: r.format,
+                      repository: r.repository,
+                      path: r.path,
+                      license: r.licenseName,
+                    })
+                  }
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-col gap-1">
                       <span className="truncate font-medium">{r.fileName}</span>
@@ -408,6 +446,7 @@ function SearchView({
                         rel="noopener noreferrer"
                         className="text-muted-foreground transition-colors hover:text-foreground"
                         aria-label={`Open ${r.fileName} on GitHub`}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <ExternalLink className="size-4" />
                       </a>
