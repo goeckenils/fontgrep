@@ -42,3 +42,7 @@ next-env.d.ts
 
 # local sqlite db
 data/
+
+# playwright test artifacts
+test-results/
+playwright-report/
