@@ -44,7 +44,10 @@ next-env.d.ts
 data/
 
 # downloaded fonts (served from /public/fonts, not committed)
-public/fonts/
+public/fonts/*
+# except self-hosted UI fonts (Geist) which must be committed
+!public/fonts/ui/
+!public/fonts/ui/*.woff2
 
 # playwright test artifacts
 test-results/
