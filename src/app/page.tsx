@@ -10,7 +10,7 @@ import {
   ExternalLink,
   Loader2,
   Sparkles,
-  EyeOff,
+  Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,28 +29,21 @@ interface SearchResponse {
   results: FontDiscoveryResult[];
 }
 
-interface CuratedFont {
-  name: string;
-  category: string;
-  license: string;
-  repo: string;
-  description: string;
+interface DiscoveredFont {
+  repository: string;
+  branch: string;
+  path: string;
+  format: string;
+  license: string | null;
+  family: string;
 }
 
-interface BrowseResponse {
-  fonts: CuratedFont[];
-  total: number;
-  excludedFromCurated: number;
+interface DiscoverResponse {
+  query: string;
+  page: number;
+  fonts: DiscoveredFont[];
+  hasMore: boolean;
 }
-
-const SEARCH_MODES: { value: FontSearchMode; label: string; icon: React.ReactNode }[] = [
-  { value: "filename", label: "Filename", icon: <FileType2 className="size-4" /> },
-  { value: "extension", label: "Extension", icon: <Tags className="size-4" /> },
-  { value: "css", label: "CSS @font-face", icon: <Paintbrush className="size-4" /> },
-  { value: "license", label: "License", icon: <Scale className="size-4" /> },
-];
-
-const CATEGORIES = ["all", "sans", "serif", "mono", "display", "handwriting"] as const;
 
 const FORMAT_VARIANT: Record<FontFormat, "default" | "secondary" | "outline" | "destructive"> = {
   ttf: "default",
@@ -63,14 +56,22 @@ const FORMAT_VARIANT: Record<FontFormat, "default" | "secondary" | "outline" | "
   unknown: "outline",
 };
 
+const SEARCH_MODES: { value: FontSearchMode; label: string; icon: React.ReactNode }[] = [
+  { value: "filename", label: "Filename", icon: <FileType2 className="size-4" /> },
+  { value: "extension", label: "Extension", icon: <Tags className="size-4" /> },
+  { value: "css", label: "CSS @font-face", icon: <Paintbrush className="size-4" /> },
+  { value: "license", label: "License", icon: <Scale className="size-4" /> },
+];
+
 export default function Home() {
   const [tab, setTab] = useState<"discover" | "search">("discover");
 
   // --- Discover state ---
-  const [curated, setCurated] = useState<BrowseResponse | null>(null);
-  const [category, setCategory] = useState<string>("all");
-  const [hidePreinstalled, setHidePreinstalled] = useState(true);
+  const [discovered, setDiscovered] = useState<DiscoveredFont[]>([]);
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [browseLoading, setBrowseLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // --- Search state ---
   const [query, setQuery] = useState("");
@@ -80,38 +81,49 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [activeViewer, setActiveViewer] = useState<ViewerFont | null>(null);
 
-  const loadBrowse = useCallback(async () => {
-    setBrowseLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("category", category);
-      params.set("exclude", hidePreinstalled ? "1" : "0");
-      const res = await fetch(`/api/fonts/browse?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to load fonts");
-      const json = (await res.json()) as BrowseResponse;
-      setCurated(json);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load fonts");
-    } finally {
-      setBrowseLoading(false);
-    }
-  }, [category, hidePreinstalled]);
+  const loadDiscover = useCallback(
+    async (pageToLoad: number, query: string, append: boolean) => {
+      if (append) setLoadingMore(true);
+      else setBrowseLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("query", query);
+        params.set("page", String(pageToLoad));
+        const res = await fetch(`/api/fonts/discover?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to discover fonts");
+        const json = (await res.json()) as DiscoverResponse;
+        setDiscovered((prev) => (append ? [...prev, ...json.fonts] : json.fonts));
+        setHasMore(json.hasMore);
+        setDiscoverPage(pageToLoad);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to discover fonts");
+      } finally {
+        setBrowseLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    []
+  );
 
   function handleTabChange(v: string) {
     setTab(v as "discover" | "search");
-    if (v === "discover") void loadBrowse();
+    if (v === "discover" && discovered.length === 0) void loadDiscover(1, "font", false);
   }
 
   // Initial load of the discover list on mount.
   useEffect(() => {
-    void loadBrowse();
-  }, [loadBrowse]);
+    void loadDiscover(1, "font", false);
+  }, [loadDiscover]);
+
+  function loadMore() {
+    if (loadingMore || !hasMore) return;
+    void loadDiscover(discoverPage + 1, "font", true);
+  }
 
   function surpriseMe() {
-    if (!curated || curated.fonts.length === 0) return;
-    const pick = curated.fonts[Math.floor(Math.random() * curated.fonts.length)];
-    toast.success(`Surprise: ${pick.name}`, { description: pick.description });
-    window.open(`https://github.com/${pick.repo}`, "_blank", "noopener,noreferrer");
+    if (discovered.length === 0) return;
+    const pick = discovered[Math.floor(Math.random() * discovered.length)];
+    toast.success(`Surprise: ${pick.family}`, { description: `${pick.repository} · ${pick.license ?? "no license"}` });
   }
 
   async function runSearch() {
@@ -181,13 +193,22 @@ export default function Home() {
 
         {tab === "discover" ? (
           <DiscoverView
-            curated={curated}
+            fonts={discovered}
             loading={browseLoading}
-            category={category}
-            setCategory={setCategory}
-            hidePreinstalled={hidePreinstalled}
-            setHidePreinstalled={setHidePreinstalled}
+            loadingMore={loadingMore}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
             onSurprise={surpriseMe}
+            onOpenViewer={(f: DiscoveredFont) =>
+              setActiveViewer({
+                family: f.family,
+                fileName: f.family,
+                format: f.format,
+                repository: f.repository,
+                path: f.path,
+                license: f.license ?? undefined,
+              })
+            }
           />
         ) : (
           <SearchView
@@ -200,58 +221,57 @@ export default function Home() {
             error={error}
             onSearch={runSearch}
             onOpenViewer={setActiveViewer}
-            activeViewer={activeViewer}
-            onCloseViewer={() => setActiveViewer(null)}
           />
         )}
       </main>
+
+      {activeViewer && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16">
+          <div className="relative w-full max-w-3xl">
+            <FontViewer font={activeViewer} />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="absolute right-2 top-2"
+              onClick={() => setActiveViewer(null)}
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function DiscoverView({
-  curated,
+  fonts,
   loading,
-  category,
-  setCategory,
-  hidePreinstalled,
-  setHidePreinstalled,
+  loadingMore,
+  hasMore,
+  onLoadMore,
   onSurprise,
+  onOpenViewer,
 }: {
-  curated: BrowseResponse | null;
+  fonts: DiscoveredFont[];
   loading: boolean;
-  category: string;
-  setCategory: (c: string) => void;
-  hidePreinstalled: boolean;
-  setHidePreinstalled: (v: boolean) => void;
+  loadingMore: boolean;
+  hasMore: boolean;
+  onLoadMore: () => void;
   onSurprise: () => void;
+  onOpenViewer: (f: DiscoveredFont) => void;
 }) {
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+      onLoadMore();
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-1">
-          {CATEGORIES.map((c) => (
-            <Button
-              key={c}
-              variant={category === c ? "default" : "outline"}
-              size="sm"
-              onClick={() => setCategory(c)}
-              className="capitalize"
-            >
-              {c}
-            </Button>
-          ))}
-        </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant={hidePreinstalled ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => setHidePreinstalled(!hidePreinstalled)}
-            data-icon="inline-start"
-          >
-            <EyeOff className="size-4" />
-            Hide pre-installed
-          </Button>
           <Button variant="outline" size="sm" onClick={onSurprise} data-icon="inline-start">
             <Sparkles className="size-4" />
             Surprise me
@@ -261,56 +281,69 @@ function DiscoverView({
 
       <Separator />
 
-      {loading && !curated ? (
+      {loading && fonts.length === 0 ? (
         <Card>
           <CardContent className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" /> Loading fonts…
           </CardContent>
         </Card>
-      ) : curated && curated.fonts.length > 0 ? (
+      ) : fonts.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-muted-foreground">
-            {curated.total} fonts
-            {curated.excludedFromCurated > 0 &&
-              ` · ${curated.excludedFromCurated} pre-installed hidden`}
+            {fonts.length} fonts discovered
+            {hasMore && " · scroll for more"}
           </p>
-          <ScrollArea className="h-[60vh] rounded-lg border">
+          <ScrollArea className="h-[60vh] rounded-lg border" onScrollCapture={handleScroll}>
             <ul className="flex flex-col divide-y">
-              {curated.fonts.map((f) => (
-                <li key={f.repo} className="p-3">
+              {fonts.map((f, i) => (
+                <li
+                  key={`${f.repository}-${f.path}-${i}`}
+                  className="cursor-pointer p-3 transition-colors hover:bg-muted/50"
+                  onClick={() => onOpenViewer(f)}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{f.name}</span>
-                      <span className="text-xs text-muted-foreground">{f.description}</span>
+                      <span className="truncate font-medium">{f.family}</span>
+                      <span className="text-xs text-muted-foreground">{f.repository}</span>
                       <div className="flex flex-wrap items-center gap-1.5 pt-1">
                         <Badge variant="outline" className="capitalize">
-                          {f.category}
+                          {f.format}
                         </Badge>
-                        <Badge variant="secondary">
-                          <Scale className="size-3" />
-                          {f.license}
-                        </Badge>
+                        {f.license && (
+                          <Badge variant="secondary">
+                            <Scale className="size-3" />
+                            {f.license}
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <a
-                      href={`https://github.com/${f.repo}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label={`Open ${f.name} on GitHub`}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-icon="inline-start"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenViewer(f);
+                      }}
                     >
-                      <ExternalLink className="size-4" />
-                    </a>
+                      <Eye className="size-4" />
+                      View
+                    </Button>
                   </div>
                 </li>
               ))}
             </ul>
+            {loadingMore && (
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Loading more…
+              </div>
+            )}
           </ScrollArea>
         </div>
       ) : (
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            No fonts in this view. Try a different category or show pre-installed fonts.
+            No fonts discovered. Set GITHUB_TOKEN in .env to fetch from GitHub.
           </CardContent>
         </Card>
       )}
@@ -328,8 +361,6 @@ function SearchView({
   error,
   onSearch,
   onOpenViewer,
-  activeViewer,
-  onCloseViewer,
 }: {
   query: string;
   setQuery: (q: string) => void;
@@ -340,25 +371,9 @@ function SearchView({
   error: string | null;
   onSearch: () => void;
   onOpenViewer: (font: ViewerFont) => void;
-  activeViewer: ViewerFont | null;
-  onCloseViewer: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      {activeViewer && (
-        <div className="relative">
-          <FontViewer font={activeViewer} />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="absolute right-2 top-2"
-            onClick={onCloseViewer}
-          >
-            Close
-          </Button>
-        </div>
-      )}
-
       <Tabs value={mode} onValueChange={(v) => setMode(v as FontSearchMode)}>
         <TabsList>
           {SEARCH_MODES.map((m) => (

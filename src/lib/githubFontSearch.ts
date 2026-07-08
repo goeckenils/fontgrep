@@ -54,6 +54,18 @@ export function normalizeGitHubItem(item: GitHubCodeSearchItem): FontDiscoveryRe
   };
 }
 
+export function githubRepoSearchUrl(query: string, page = 1, perPage = 10): string {
+  const topic = query.trim() || "font";
+  const params = new URLSearchParams({
+    q: `topic:${topic} font in:name,description,topics`,
+    sort: "stars",
+    order: "desc",
+    page: String(page),
+    per_page: String(Math.min(Math.max(perPage, 1), 100)),
+  });
+  return `https://api.github.com/search/repositories?${params.toString()}`;
+}
+
 export function githubSearchUrl(query: string, limit = 25): string {
   const params = new URLSearchParams({
     q: query,
@@ -62,4 +74,33 @@ export function githubSearchUrl(query: string, limit = 25): string {
     order: "desc",
   });
   return `https://api.github.com/search/code?${params.toString()}`;
+}
+
+export interface GitHubRepoSearchItem {
+  full_name: string;
+  default_branch: string;
+  stargazers_count: number;
+  license: { key: string; name: string; spdx_id: string } | null;
+  description: string | null;
+}
+
+export interface GitHubTreeEntry {
+  path: string;
+  type: string;
+  size?: number;
+}
+
+export interface GitHubTreeResponse {
+  tree: GitHubTreeEntry[];
+}
+
+const FONT_EXT_RE = /\.(ttf|otf|woff|woff2|eot)$/i;
+
+export function extractFontPaths(tree: GitHubTreeResponse): { path: string; format: string }[] {
+  return tree.tree
+    .filter((e) => e.type === "blob" && FONT_EXT_RE.test(e.path))
+    .map((e) => ({
+      path: e.path,
+      format: (e.path.split(".").pop() || "unknown").toLowerCase(),
+    }));
 }

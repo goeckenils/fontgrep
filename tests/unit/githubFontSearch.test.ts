@@ -3,7 +3,8 @@ import {
   buildGitHubFontQuery,
   detectFontFormat,
   normalizeGitHubItem,
-  githubSearchUrl,
+  githubRepoSearchUrl,
+  extractFontPaths,
 } from "@/lib/githubFontSearch";
 import type { GitHubCodeSearchItem } from "@/types/fontDiscovery";
 
@@ -100,18 +101,34 @@ describe("normalizeGitHubItem", () => {
   });
 });
 
-describe("githubSearchUrl", () => {
-  it("builds a code-search url with pagination and sort", () => {
-    const url = githubSearchUrl("Inter path:fonts", 10);
-    expect(url).toContain("https://api.github.com/search/code?");
-    expect(url).toContain("q=Inter+path%3Afonts");
-    expect(url).toContain("per_page=10");
-    expect(url).toContain("sort=indexed");
-    expect(url).toContain("order=desc");
+describe("githubRepoSearchUrl", () => {
+  it("builds a repository-search url scoped to font topic", () => {
+    const url = githubRepoSearchUrl("font", 1, 5);
+    expect(url).toContain("https://api.github.com/search/repositories?");
+    expect(url).toContain("q=topic%3Afont+font");
+    expect(url).toContain("sort=stars");
+    expect(url).toContain("per_page=5");
   });
 
-  it("clamps limit to [1, 100]", () => {
-    expect(githubSearchUrl("x", 0).includes("per_page=1")).toBe(true);
-    expect(githubSearchUrl("x", 999).includes("per_page=100")).toBe(true);
+  it("clamps page and perPage", () => {
+    expect(githubRepoSearchUrl("font", 0, 0)).toContain("page=1");
+    expect(githubRepoSearchUrl("font", 1, 999)).toContain("per_page=100");
+  });
+});
+
+describe("extractFontPaths", () => {
+  it("keeps only font binaries from a tree", () => {
+    const tree = {
+      tree: [
+        { path: "fonts/Inter.ttf", type: "blob" },
+        { path: "fonts/Inter.woff2", type: "blob" },
+        { path: "README.md", type: "blob" },
+        { path: "src", type: "tree" },
+      ],
+    };
+    const fonts = extractFontPaths(tree);
+    expect(fonts).toHaveLength(2);
+    expect(fonts[0]).toEqual({ path: "fonts/Inter.ttf", format: "ttf" });
+    expect(fonts[1].format).toBe("woff2");
   });
 });

@@ -52,7 +52,11 @@ export async function POST(request: Request) {
   const sourceUrl = `https://github.com/${body.repository}/blob/main/${body.path}`;
   const existing = getFontsBySourceUrl(sourceUrl);
   if (existing) {
-    return NextResponse.json({ id: existing.id, alreadyExists: true });
+    return NextResponse.json({
+      id: existing.id,
+      alreadyExists: true,
+      publicPath: existing.public_path,
+    });
   }
 
   const fetched = await fetchFont(body.repository, body.path);
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
   const ext = EXT_BY_FORMAT[body.format ?? "unknown"];
   const fileName = `${randomUUID()}.${ext}`;
   const localPath = path.join(FONTS_DIR_PATH, fileName);
+  const publicPath = `/fonts/${fileName}`;
   const buf = Buffer.from(await fetched.res.arrayBuffer());
   await fs.writeFile(localPath, buf);
 
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
     family: body.fileName ?? body.path.split("/").pop() ?? "unknown",
     source_url: sourceUrl,
     local_path: localPath,
+    public_path: publicPath,
     format: body.format ?? "unknown",
     license: body.license ?? null,
   });
@@ -81,7 +87,7 @@ export async function POST(request: Request) {
     id: row.id,
     family: row.family,
     format: row.format,
-    localPath: `/api/font-file/${row.id}`,
+    publicPath: row.public_path,
     alreadyExists: false,
   });
 }
