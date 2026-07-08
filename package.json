@@ -1,5 +1,5 @@
 {
-  "name": "github-font-indexer",
+  "name": "fontgrep",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.33.2",
@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
@@ -19,6 +20,8 @@
     "better-sqlite3": "^11.8.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fontkit": "^2.0.4",
+    "geist": "^1.7.2",
     "lucide-react": "^1.23.0",
     "motion": "^12.42.2",
     "next": "16.2.10",
