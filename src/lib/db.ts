@@ -20,6 +20,7 @@ export interface FontRow {
 }
 
 function ensureDirs() {
+  fs.mkdirSync(DB_DIR, { recursive: true });
   fs.mkdirSync(FONTS_DIR_PATH, { recursive: true });
 }
 
