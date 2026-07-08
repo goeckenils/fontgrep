@@ -1,86 +1,81 @@
-# github-font-indexer
+# github-font-indexer (fontgrep)
 
-Tool zum Ausnutzen von GitHubs Code-Index für Font-/Typeface-Recherche, Discovery und Kuration.
+Tool zum Entdecken, Vorschauen und lokal Speichern von Open-Source-Fonts aus GitHub — ohne Google Fonts, ohne System-Fonts.
 
 ## Quick Start
 
 ```bash
-# Setup
-github-font-indexer install 2>&1 | tee /tmp/install.log
+# Deps
+pnpm install
 
-# Env-Vorbereitung
+# Env-Vorbereitung (GitHub Token REQUIRED für Discovery/Suche)
 cp .env.example .env
-# Editiere .env mit deinen Werten (GitHub Token optional, für höhere Rate-Limits)
+# Setze GITHUB_TOKEN=<dein token> in .env (fine-grained oder classic PAT)
+# Ohne Token liefert die API github_auth_required (401)
 
 # Dev-Server
-<PKG> dev        # http://localhost:3000
+pnpm dev        # http://localhost:3000
 
 # Tests
-<PKG> test       # unit (Vitest)
-<PKG> exec playwright test  # E2E
+pnpm test       # unit (Vitest)
+pnpm exec playwright test  # E2E
 
 # Quality
-<PKG> lint typecheck format
+pnpm lint typecheck format
 ```
 
 ## Was es macht
 
-GitHub Font Indexer ist ein kleines Such-Tool, das den **Code-Index von GitHub** ausnutzt, um Open-Source-Fonts, Typefaces und deren Lizenzen zu finden, zu sichten und zu kuratieren — ohne durch endlose Repository-Dateien klicken zu müssen.
+fontgrep findet echte Open-Source-Font-Binaries (`.ttf`/`.otf`/`.woff`/`.woff2`) auf GitHub und zeigt sie **direkt als Vorschau** — nicht nur als Repo-Link.
 
-Hinterlegt ist eine API-Route (`/api/font-search`), die die GitHub Code-Search mit vier Suchmodi anspricht:
+- **Discover** — nutzt die GitHub **Repository-Search** (`topic:font`, sortiert nach Stars) + die **Git-Tree-API** pro Repo, um echte Font-Dateien zu finden (nicht nur README/LICENSE-Text wie bei der Code-Search). Lädt beim Runterscrollen automatisch weitere Fonts nach (**Infinite Scroll**).
+- **Search** — GitHub Code-Search mit vier Modi (Filename / Extension / CSS @font-face / License), normalisiert zu Format + Repository + Pfad + SPDX-Lizenz.
+- **FontViewer** — klick auf eine Font öffnet den Viewer als **Hauptansicht** (ersetzt die Liste). Preview-Text-Input, Size- & Weight-Slider. **Save font** lädt die Datei herunter.
 
-- **Filename** — Font-Dateien anhand ihres Namens, gescoped auf `path:fonts`.
-- **Extension** — alle Font-Binaries (`ttf`/`otf`/`woff`/`woff2`) über eine OR-Query.
-- **CSS @font-face** — sucht `font-family`-Deklarationen in CSS-Dateien (ideal, um zu sehen, wie ein Font eingebunden wird).
-- **License** — findet `LICENSE`/`OFL.txt`/`FONTLOG.txt` und zeigt die erkannte Lizenz (SPDX) pro Treffer an.
+### Lokale Speicherung + Dedup
 
-Die Ergebnisse werden normalisiert (Format-Erkennung, Repository, Pfad, Lizenz) und in einer schadcn/ui-Oberfläche mit Format-Badges, Lizenz-Hinweis und direktem GitHub-Link dargestellt. Optional kann ein `GITHUB_TOKEN` gesetzt werden, um die Rate-Limits der Search-API anzuheben.
+- Fonts werden nach **`public/fonts/<uuid>.<ext>`** gespeichert → direkt per URL servierbar (`/fonts/...`), kein API-Roundtrip.
+- SQLite (`data/fontgrep.db`) hält pro Font einen Record mit `public_path` + `source_url`.
+- `source_url` ist **UNIQUE** → Doppelladen wird verhindert (Dedup), keine Clutter.
+- `public/fonts/` und `data/` sind gitignored (lokal, nicht im Repo).
 
 ## Tech Stack
 
-- **Frontend:** Next.js 16 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, Lucide
-- **Animation:** tw-animate-css (klein) + motion (mittel) / GSAP (komplex, siehe STACK.md)
-- **Backend:** SQLite (better-sqlite3, siehe STACK.md)
+- **Frontend:** Next.js 16 (App Router), TypeScript strict, Tailwind v4, shadcn/ui (base-nova), Lucide
+- **Backend:** Next.js Route Handlers + SQLite (better-sqlite3)
 - **Tooling:** pnpm, Vitest, Playwright, Prettier + Tailwind-class-sort
 - **Quality:** ESLint flat, tsc --noEmit, Prettier
 
-> **Volltext-Stack-Doku:** siehe `STACK.md` und `STACK-shadcn-themes.md`.
-
-## Struktur (siehe `FOLDER_STRUCTURE.md`)
+## Projektstruktur
 
 ```
 .
-├── src/app/                  # App Router pages, route handlers, server actions
-├── src/components/           # UI components (lucide, shadcn/ui)
-├── src/lib/                  # Utilities, helpers, cn merger, env validator
-├── src/types/                # TypeScript types
-├── tests/units/              # Unit & integration tests (vitest)
-├── tests/e2e/                # End-to-end tests (playwright)
-├── data/                     # SQLite DB file (gitignored)
-├── scripts/                  # Build/migration/backup scripts (bash)
-├── docs/decisions/           # Architecture Decision Records
-├── AGENTS.md                 # Agent-Workflow (MANDATORY-Pfad zur Orientierung)
-├── STACK.md                  # Tech-Stack
-├── STACK-shadcn-themes.md    # Theme-Empfehlungen
-├── FOLDER_STRUCTURE.md       # Was geht wohin?
-├── DEVELOPMENT.md            # Local-Setup
-├── DEPLOYMENT.md             # Production-Deploy
-└── README.md                 # Dieses Dokument
+├── src/app/
+│   ├── api/fonts/
+│   │   ├── discover/route.ts   # Repo-Search + Tree API -> echte Fonts (paginiert)
+│   │   ├── download/route.ts   # Font -> public/fonts/ + DB (dedup via source_url)
+│   │   └── font-search/route.ts # GitHub Code-Search (4 Modi)
+│   └── page.tsx                # Discover | Search Tabs + FontViewer (main view)
+├── src/components/
+│   ├── FontViewer.tsx          # @font-face preview, slider, save
+│   └── ui/                     # shadcn/ui components
+├── src/lib/
+│   ├── db.ts                   # better-sqlite3 singleton + migrations
+│   └── githubFontSearch.ts     # Query-Builder + Tree-Parsing
+├── public/fonts/               # heruntergeladene Fonts (gitignored)
+├── data/                       # SQLite DB (gitignored)
+└── .scratch/                   # Issue-Tracker (local)
 ```
+
+## Bekannte Limitationen
+
+- Discovery nutzt `topic:font` als Default-Query. Eine freie Topic-Eingabe ist noch nicht im UI (hardcoded "font").
+- Viewer rendert die Font erst nach **Save font** (Download in `public/fonts/`). Ein sofortiger Preview-Modus (vor dem Speichern) ist noch nicht implementiert.
+- GitHub Rate-Limits: ohne Token sehr restriktiv. `GITHUB_TOKEN` setzen.
 
 ## Lizenz & Status
 
 - Lizenz: MIT
 - Status: WIP / experimental
 
-> Dieses Projekt ist via `bash ~/project-templates/scripts/init-project.sh github-font-indexer` initialisiert.
-
-## Theme (initialisiert)
-
-- shadcn-Lib:  base
-- preset:     nova
-- baseColor:  neutral
-- menu:       subdued / subtle
-
-> Falls Du das Theme später ändern möchtest:
->   `pnpm dlx shadcn apply nova`
+> Initialisiert via `bash ~/project-templates/scripts/init-project.sh github-font-indexer`.
