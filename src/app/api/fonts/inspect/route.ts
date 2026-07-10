@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { getFontById, FONTS_DIR_PATH } from "@/lib/db";
+import { getFontById } from "@/lib/db";
+import { isValidFontBuffer } from "@/lib/fontBytes";
 import { parseFontBuffer } from "@/lib/fontMeta";
+import { fetchGithubFontBytes } from "@/lib/githubFontFetch";
 import fs from "node:fs/promises";
-import path from "node:path";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
   }
 
   let buf: Buffer | null = null;
+  let resolvedBranch: string | null = null;
 
   // 1) Already-saved font: read from disk.
   if (typeof body.id === "number") {
@@ -33,30 +35,25 @@ export async function POST(request: Request) {
     }
   }
 
-  // 2) Remote URL straight to parser.
-  if (!buf && body.rawUrl) {
-    try {
-      const res = await fetch(body.rawUrl, { headers: { "User-Agent": "fontgrep" } });
-      if (res.ok) buf = Buffer.from(await res.arrayBuffer());
-    } catch {
-      buf = null;
+  // 2) repo/path/branch — validated GitHub fetch.
+  if (!buf && body.repo && body.path) {
+    const hit = await fetchGithubFontBytes(body.repo, body.path, body.branch ?? null);
+    if (hit) {
+      buf = Buffer.from(hit.bytes);
+      resolvedBranch = hit.resolvedBranch;
     }
   }
 
-  // 3) repo/path/branch -> probe main/master.
-  if (!buf && body.repo && body.path) {
-    for (const branch of [body.branch || "main", "master", "main"]) {
-      if (branch === body.branch) continue;
-      const url = `https://raw.githubusercontent.com/${body.repo}/${branch}/${body.path}`;
-      try {
-        const res = await fetch(url, { headers: { "User-Agent": "fontgrep" } });
-        if (res.ok) {
-          buf = Buffer.from(await res.arrayBuffer());
-          break;
-        }
-      } catch {
-        /* try next */
+  // 3) Remote URL fallback.
+  if (!buf && body.rawUrl) {
+    try {
+      const res = await fetch(body.rawUrl, { headers: { "User-Agent": "fontgrep" } });
+      if (res.ok) {
+        const candidate = Buffer.from(await res.arrayBuffer());
+        if (isValidFontBuffer(candidate)) buf = candidate;
       }
+    } catch {
+      buf = null;
     }
   }
 
@@ -86,5 +83,6 @@ export async function POST(request: Request) {
     isVariable: meta.isVariable,
     axes: meta.axes,
     publicPath,
+    resolvedBranch,
   });
 }

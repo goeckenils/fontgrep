@@ -60,7 +60,11 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.38 0 0);
+  --specimen-muted-on-light: oklch(0.32 0.012 286);
+  --specimen-muted-on-dark: oklch(0.86 0.01 286);
+  --specimen-border-on-light: oklch(0.78 0.015 286);
+  --specimen-border-on-dark: oklch(0.55 0.04 286);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -73,14 +77,14 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.988 0.004 286);
+  --sidebar-foreground: oklch(0.12 0.012 286);
+  --sidebar-primary: oklch(0.24 0.05 286);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.955 0.01 286);
+  --sidebar-accent-foreground: oklch(0.12 0.015 286);
+  --sidebar-border: oklch(0.91 0.01 286);
+  --sidebar-ring: oklch(0.62 0.03 286);
 }
 
 .dark {
@@ -95,7 +99,11 @@
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.78 0.01 286);
+  --specimen-muted-on-light: oklch(0.78 0.01 286);
+  --specimen-muted-on-dark: oklch(0.82 0.01 286);
+  --specimen-border-on-light: oklch(0.45 0.02 286);
+  --specimen-border-on-dark: oklch(0.62 0.05 286);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -107,14 +115,14 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.17 0.012 286);
+  --sidebar-foreground: oklch(0.96 0.005 286);
+  --sidebar-primary: oklch(0.72 0.14 286);
+  --sidebar-primary-foreground: oklch(0.16 0.02 286);
+  --sidebar-accent: oklch(0.24 0.02 286);
+  --sidebar-accent-foreground: oklch(0.96 0.005 286);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.55 0.08 286);
 }
 
 @layer base {
@@ -126,5 +134,168 @@
   }
   html {
     @apply font-sans;
+  }
+
+}
+
+@layer components {
+  .specimen-panel {
+    @apply transition-all duration-500;
+    @apply hover:shadow-[0_20px_60px_-20px] hover:shadow-sidebar-primary/30;
+  }
+
+  .specimen-panel[data-font-loaded="true"],
+  .specimen-panel.font-loaded {
+    box-shadow: 0 16px 48px -24px rgb(0 0 0 / 0.12);
+  }
+
+  .dark .specimen-panel[data-font-loaded="true"],
+  .dark .specimen-panel.font-loaded {
+    box-shadow: 0 16px 48px -24px rgb(0 0 0 / 0.45);
+  }
+
+  /* Press / letterpress micro detail */
+  .specimen-panel .specimen-body {
+    position: relative;
+  }
+
+  .specimen-header,
+  .specimen-footer {
+    @apply px-3 py-2.5;
+  }
+
+  .specimen-header {
+    @apply bg-inherit;
+  }
+
+  .specimen-footer {
+    @apply bg-inherit;
+  }
+
+  .specimen-body {
+    @apply isolate;
+  }
+
+  /* Bento card — soft fade when preview text overflows the card edge */
+  .bento-preview-fade {
+    mask-image: linear-gradient(to right, #000 0%, #000 76%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, #000 0%, #000 76%, transparent 100%);
+  }
+
+  .specimen-grain {
+    opacity: 0.08;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* GSAP card reveal — hide inner phases until timeline runs */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-reveal]:not([data-revealed]) {
+      opacity: 0;
+      transform: translateY(28px);
+    }
+
+    [data-reveal]:not([data-revealed]) [data-card-line],
+    [data-reveal]:not([data-revealed]) [data-card-font],
+    [data-reveal]:not([data-revealed]) [data-card-font-text],
+    [data-reveal]:not([data-revealed]) [data-card-footer] {
+      opacity: 0;
+    }
+
+    [data-card-font],
+    [data-card-font-text] {
+      transition: none !important;
+    }
+
+    /* No fallback flash while the webfont is still loading */
+    [data-card-font-text]:not([data-font-loaded]):not([data-font-error]) {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .font-reveal-word {
+      display: inline-block;
+      will-change: transform, opacity;
+    }
+
+    /* SplitText word masks clip descenders at tight line-height — pad then offset.
+       https://gsap.com/community/forums/topic/45196-splittext-mask-cuts-descenders-off/ */
+    .font-reveal-word-mask {
+      display: inline-block;
+      vertical-align: top;
+      padding-bottom: 0.1em;
+      margin-bottom: -0.1em;
+    }
+  }
+
+  .specimen-hover {
+    @apply bg-sidebar-primary opacity-0 backdrop-blur-[1px] transition-opacity duration-300;
+  }
+
+  .group:not([data-gsap-hover]):hover .specimen-hover,
+  .group:not([data-gsap-hover]):focus-within .specimen-hover {
+    opacity: 1;
+  }
+
+  .specimen-block {
+    @apply border border-border bg-sidebar-accent/40 p-3.5;
+  }
+
+  .specimen-label {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  .specimen-badge {
+    @apply border border-current px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[0.18em];
+  }
+
+  .specimen-badge-warn {
+    @apply border-amber-800 bg-amber-100 text-amber-950;
+  }
+
+  .dark .specimen-badge-warn {
+    @apply border-amber-300 bg-amber-950 text-amber-100;
+  }
+
+  .specimen-badge-inverse {
+    @apply border-[var(--specimen-border-on-dark)] bg-sidebar-primary text-sidebar-primary-foreground;
+  }
+
+  .specimen-input {
+    @apply rounded-none border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none;
+    @apply focus-visible:ring-2 focus-visible:ring-ring;
+  }
+
+  .specimen-chip {
+    @apply rounded-none border px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors;
+  }
+
+  .specimen-chip-active {
+    @apply border-sidebar-primary bg-sidebar-primary text-sidebar-primary-foreground;
+  }
+
+  .specimen-chip-idle {
+    @apply border-border bg-background text-muted-foreground;
+    @apply hover:border-sidebar-primary hover:text-foreground;
+  }
+
+  .specimen-nav-active {
+    @apply bg-sidebar-accent text-sidebar-accent-foreground shadow-sm;
+  }
+
+  .specimen-nav-idle {
+    @apply text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground;
+  }
+
+  .specimen-stat {
+    @apply min-w-0 flex-1 border border-border bg-background px-2.5 py-2;
+  }
+
+  .specimen-viewer {
+    @apply border border-border bg-sidebar/50;
+  }
+
+  .specimen-dialog {
+    @apply border border-border bg-card text-card-foreground shadow-xl;
   }
 }

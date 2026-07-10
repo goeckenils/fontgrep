@@ -1,37 +1,72 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { Children, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
-  FileType2,
-  Tags,
-  Paintbrush,
-  Scale,
   ExternalLink,
   Loader2,
   Sparkles,
   Eye,
   Trash2,
   HelpCircle,
-  Keyboard,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { AppSidebar } from "@/components/AppSidebar";
+import { AppTopBar } from "@/components/AppTopBar";
+import { FontBentoGrid } from "@/components/FontBentoGrid";
+import { FontPreviewText } from "@/components/FontPreviewText";
+import {
+  SpecimenResultCard,
+  SpecimenViewAction,
+} from "@/components/SpecimenResultCard";
+import { WanderFeedEnd } from "@/components/WanderFeedEnd";
+import { DiscoverLoadingPins } from "@/components/DiscoverLoadingPins";
+import { BentoFontCard } from "@/components/BentoFontCard";
+import { GsapTabPanel } from "@/components/GsapTabPanel";
+import { useGsapScrollReveal } from "@/hooks/useGsapScrollReveal";
+import { motionOK } from "@/lib/gsap";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useMinLg } from "@/hooks/useMinLg";
+import { useScrollSmoother } from "@/hooks/useScrollSmoother";
+import { LicenseBadge } from "@/components/LicenseBadge";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+
+
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+
 import { FontViewer, type ViewerFont } from "@/components/FontViewer";
+import { cn } from "@/lib/utils";
+import { FEED_SURFACE } from "@/lib/viewerTheme";
 import { FontCompare, type CompareFontOption } from "@/components/FontCompare";
 import { ModeToggle } from "@/components/mode-toggle";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { toast } from "sonner";
-import type { FontFormat, FontSearchMode } from "@/types/fontDiscovery";
+import {
+  applyDiscoverFilters,
+  DEFAULT_DISCOVER_FILTERS,
+  DEFAULT_DISCOVER_SORT,
+  hasCustomDiscoverSettings,
+  MAX_AUTO_LOAD_PAGES,
+  MIN_VISIBLE_BEFORE_AUTO_LOAD,
+  POPULAR_DISCOVER_FILTERS,
+  TREASURE_DISCOVER_FILTERS,
+  type DiscoverFilters,
+  type DiscoverSort,
+} from "@/lib/fontFilters";
+import type {
+  FontDiscoveryResult,
+  FontFormat,
+  FontSearchMode,
+} from "@/types/fontDiscovery";
+import {
+  DISCOVER_FILE_QUERY_VARIANT_COUNT,
+  type DiscoverLane,
+} from "@/lib/githubFontSearch";
 import type { DiscoveredFontFamily } from "@/lib/fontFamily";
-import { styleLabel } from "@/lib/fontFamily";
+import { CARD_GRID_CLASS } from "@/lib/cardGrid";
+
 
 type TabId = "discover" | "search" | "library";
 
@@ -39,15 +74,6 @@ interface SearchResponse {
   query: string;
   totalCount: number;
   results: FontDiscoveryResult[];
-}
-
-interface FontDiscoveryResult {
-  repository: string;
-  path: string;
-  fileName: string;
-  url: string;
-  format: FontFormat;
-  licenseName?: string;
 }
 
 interface LibraryFont {
@@ -75,25 +101,7 @@ const FORMAT_VARIANT: Record<FontFormat, "default" | "secondary" | "outline" | "
   unknown: "outline",
 };
 
-const SEARCH_MODES: { value: FontSearchMode; label: string; icon: React.ReactNode }[] = [
-  { value: "filename", label: "Filename", icon: <FileType2 className="size-4" /> },
-  { value: "extension", label: "Extension", icon: <Tags className="size-4" /> },
-  { value: "css", label: "CSS @font-face", icon: <Paintbrush className="size-4" /> },
-  { value: "license", label: "License", icon: <Scale className="size-4" /> },
-];
-
-const TOPIC_CHIPS = [
-  "font",
-  "monospace",
-  "display",
-  "handwriting",
-  "variable-font",
-  "icon-font",
-  "nerd-font",
-  "serif",
-  "sans-serif",
-  "pixel-font",
-];
+const DEFAULT_PREVIEW_TEXT = "Sphinx of black quartz, judge my vow";
 
 function rawUrlOf(repo: string, branch: string, path: string) {
   return `https://raw.githubusercontent.com/${repo}/${branch}/${path}`;
@@ -108,6 +116,7 @@ export default function Home() {
   const fontParam = searchParams.get("font");
 
   const [tab, setTab] = useState<TabId>(tabParam ?? "discover");
+  const [previewText, setPreviewText] = useState(DEFAULT_PREVIEW_TEXT);
 
   // --- Discover state ---
   const [families, setFamilies] = useState<DiscoveredFontFamily[]>([]);
@@ -117,10 +126,63 @@ export default function Home() {
   const [browseLoading, setBrowseLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [discoverTreasure, setDiscoverTreasure] = useState(true);
+  const [reposFetchedTotal, setReposFetchedTotal] = useState(0);
+  const [githubTotalCount, setGithubTotalCount] = useState<number | null>(null);
+  const [discoverLane, setDiscoverLane] = useState<DiscoverLane>("files");
+  const [discoverVariant, setDiscoverVariant] = useState(0);
+  const autoLoadAttempts = useRef(0);
+
+  function resetDiscoverCursor() {
+    setDiscoverPage(1);
+    setDiscoverLane("files");
+    setDiscoverVariant(0);
+    setReposFetchedTotal(0);
+    setGithubTotalCount(null);
+    autoLoadAttempts.current = 0;
+  }
 
   // --- Filter & sort (issue 13) ---
   const [fmtFilters, setFmtFilters] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<"relevance" | "name" | "stars">("relevance");
+  const [discoverFilters, setDiscoverFilters] = useState<DiscoverFilters>(
+    DEFAULT_DISCOVER_FILTERS,
+  );
+  const [sortBy, setSortBy] = useState<DiscoverSort>(DEFAULT_DISCOVER_SORT);
+
+  const visibleFamilies = useMemo(
+    () => applyDiscoverFilters(families, fmtFilters, discoverFilters, sortBy),
+    [families, fmtFilters, discoverFilters, sortBy],
+  );
+
+  function resetDiscoverSettings() {
+    setFmtFilters(new Set());
+    setDiscoverFilters(TREASURE_DISCOVER_FILTERS);
+    setSortBy(DEFAULT_DISCOVER_SORT);
+    if (!discoverTreasure) {
+      setDiscoverTreasure(true);
+      setFamilies([]);
+      resetDiscoverCursor();
+      void loadDiscover(1, discoverTopic, false, true, "files", 0);
+    }
+  }
+
+  function enableRareHunt() {
+    setDiscoverFilters(TREASURE_DISCOVER_FILTERS);
+    setSortBy(DEFAULT_DISCOVER_SORT);
+    setDiscoverTreasure(true);
+    setFamilies([]);
+    resetDiscoverCursor();
+    void loadDiscover(1, discoverTopic, false, true, "files", 0);
+  }
+
+  function enablePopularMode() {
+    setDiscoverFilters(POPULAR_DISCOVER_FILTERS);
+    setSortBy("stars");
+    setDiscoverTreasure(false);
+    setFamilies([]);
+    resetDiscoverCursor();
+    void loadDiscover(1, discoverTopic, false, false, "files", 0);
+  }
 
   // --- Search state ---
   const [query, setQuery] = useState("");
@@ -142,14 +204,31 @@ export default function Home() {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const topicInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const feedScrollRef = useRef<HTMLElement>(null);
+  const smoothWrapperRef = useRef<HTMLDivElement>(null);
+  const smoothContentRef = useRef<HTMLDivElement>(null);
+  const loadSentinelRef = useRef<HTMLDivElement>(null);
+  const isMinLg = useMinLg();
+  const [motionOk, setMotionOk] = useState(true);
+
+  useEffect(() => {
+    setMotionOk(motionOK());
+  }, []);
+
+  const searchPreviewText = query.trim() || previewText;
 
   const mergeFont = (f: DiscoveredFontFamily): ViewerFont => ({
     family: f.family,
+    realFamily: f.family,
     format: f.styles[0]?.format ?? "unknown",
     fileName: f.styles[0]?.fileName ?? f.family,
     repository: f.repository,
+    branch: f.branch,
     path: f.styles[0]?.path,
     license: f.license ?? undefined,
+    weight: f.styles[0]?.weight ?? null,
+    style: f.styles[0]?.style ?? null,
+    isVariable: f.styles.some((s) => s.variable) || f.styles[0]?.format === "variable",
     rawUrl: f.styles[0]
       ? rawUrlOf(f.repository, f.branch, f.styles[0].path)
       : undefined,
@@ -188,11 +267,15 @@ export default function Home() {
             setActiveViewer({
               id: found.id,
               family: found.realFamily ?? found.family,
+              realFamily: found.realFamily,
               format: found.format,
               fileName: found.family,
               license: found.license ?? undefined,
               publicPath: found.publicPath ?? undefined,
+              weight: found.weight,
+              style: found.style,
               isVariable: found.isVariable,
+              designer: found.designer,
             });
           }
         } catch {
@@ -218,51 +301,127 @@ export default function Home() {
 
   // --- Discover loading (issue 06, 09 client cache) ---
   const loadDiscover = useCallback(
-    async (pageToLoad: number, topic: string, append: boolean) => {
+    async (
+      pageToLoad: number,
+      topic: string,
+      append: boolean,
+      treasure = discoverTreasure,
+      lane: DiscoverLane = "files",
+      variant = 0,
+    ) => {
       if (append) setLoadingMore(true);
       else setBrowseLoading(true);
       setDiscoverError(null);
-      const sessionKey = `discover:${topic}:${pageToLoad}`;
+      const sessionKey = `discover:${topic}:${lane}:${variant}:${pageToLoad}:${treasure ? "treasure" : "default"}`;
+      let continueLoad:
+        | { page: number; lane: DiscoverLane; variant: number }
+        | null = null;
+
       try {
         if (!append) {
           const cached = sessionStorage.getItem(sessionKey);
           if (cached) {
-            const parsed = JSON.parse(cached);
-            setFamilies(parsed.families);
-            setHasMore(parsed.hasMore);
-            setDiscoverPage(pageToLoad);
-            return;
+            const parsed = JSON.parse(cached) as {
+              families?: DiscoveredFontFamily[];
+              hasMore?: boolean;
+              totalCount?: number | null;
+              lane?: DiscoverLane;
+              variant?: number;
+            };
+            if ((parsed.families?.length ?? 0) > 0) {
+              setFamilies(parsed.families!);
+              setHasMore(parsed.hasMore ?? false);
+              setGithubTotalCount(parsed.totalCount ?? null);
+              setDiscoverPage(pageToLoad);
+              setDiscoverLane(parsed.lane ?? lane);
+              setDiscoverVariant(parsed.variant ?? variant);
+              return;
+            }
+            sessionStorage.removeItem(sessionKey);
           }
         }
         const params = new URLSearchParams();
         params.set("query", topic);
         params.set("page", String(pageToLoad));
+        params.set("lane", lane);
+        if (lane === "files") params.set("variant", String(variant));
+        if (!treasure) params.set("treasure", "0");
         const res = await fetch(`/api/fonts/discover?${params.toString()}`);
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-          if (res.status === 429) {
-            setDiscoverError(body.message ?? "GitHub rate limit reached. Try again later.");
-          } else {
-            throw new Error(body.message ?? "Failed to discover fonts");
-          }
+          const body = (await res.json().catch(() => ({}))) as {
+            message?: string;
+            error?: string;
+            status?: number;
+          };
+          const msg =
+            body.message ??
+            (body.error === "github_auth_required"
+              ? "Set GITHUB_TOKEN in your .env to discover fonts from GitHub."
+              : body.error === "github_repo_search_failed"
+                ? `GitHub repo search failed (${body.status ?? res.status}). Check your token and try again.`
+                : body.error === "github_code_search_failed"
+                  ? `GitHub file search failed (${body.status ?? res.status}). Try again shortly.`
+                  : `Discover failed (${res.status})`);
+          setDiscoverError(msg);
+          if (!append) sessionStorage.removeItem(sessionKey);
           return;
         }
         const json = (await res.json()) as {
           families: DiscoveredFontFamily[];
           hasMore: boolean;
+          reposFetched?: number;
+          totalCount?: number | null;
+          lane?: DiscoverLane;
+          variant?: number;
         };
+
         setFamilies((prev) => (append ? [...prev, ...json.families] : json.families));
-        setHasMore(json.hasMore);
         setDiscoverPage(pageToLoad);
-        if (!append) sessionStorage.setItem(sessionKey, JSON.stringify(json));
+        setDiscoverLane(json.lane ?? lane);
+        setDiscoverVariant(json.variant ?? variant);
+        if (json.totalCount != null) setGithubTotalCount(json.totalCount);
+        setReposFetchedTotal((prev) =>
+          append ? prev + (json.reposFetched ?? 0) : (json.reposFetched ?? 0),
+        );
+        if (!append && json.families.length > 0) {
+          sessionStorage.setItem(sessionKey, JSON.stringify(json));
+        }
+
+        if (!json.hasMore) {
+          if (lane === "files" && variant + 1 < DISCOVER_FILE_QUERY_VARIANT_COUNT) {
+            const nextVariant = variant + 1;
+            setDiscoverVariant(nextVariant);
+            setHasMore(true);
+            continueLoad = { page: 1, lane: "files", variant: nextVariant };
+          } else if (lane === "files") {
+            setDiscoverLane("repos");
+            setHasMore(true);
+            continueLoad = { page: 1, lane: "repos", variant: 0 };
+          } else {
+            setHasMore(false);
+          }
+        } else {
+          setHasMore(true);
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to discover fonts");
       } finally {
         setBrowseLoading(false);
         setLoadingMore(false);
       }
+
+      if (continueLoad) {
+        void loadDiscover(
+          continueLoad.page,
+          topic,
+          true,
+          treasure,
+          continueLoad.lane,
+          continueLoad.variant,
+        );
+      }
     },
-    []
+    [discoverTreasure],
   );
 
   const loadLibrary = useCallback(async () => {
@@ -282,7 +441,9 @@ export default function Home() {
   function handleTabChange(v: string) {
     const next = v as TabId;
     setTab(next);
-    syncUrl({ tab: next });
+    setActiveViewer(null);
+    setCompareMode(false);
+    syncUrl({ tab: next, font: null });
     if (next === "discover" && families.length === 0) void loadDiscover(1, discoverTopic, false);
     if (next === "library") void loadLibrary();
   }
@@ -294,22 +455,95 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function loadMore() {
+  const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return;
-    void loadDiscover(discoverPage + 1, discoverTopic, true);
-  }
+    void loadDiscover(
+      discoverPage + 1,
+      discoverTopic,
+      true,
+      discoverTreasure,
+      discoverLane,
+      discoverVariant,
+    );
+  }, [
+    loadingMore,
+    hasMore,
+    discoverPage,
+    discoverTopic,
+    discoverTreasure,
+    discoverLane,
+    discoverVariant,
+    loadDiscover,
+  ]);
+
+  const feedSurface =
+    tab === "discover" || tab === "search" || tab === "library";
+
+  const scrollSmootherEnabled =
+    feedSurface &&
+    !activeViewer &&
+    !compareMode &&
+    isMinLg &&
+    motionOk;
+
+  useInfiniteScroll({
+    rootRef: scrollSmootherEnabled ? { current: null } : feedScrollRef,
+    sentinelRef: loadSentinelRef,
+    enabled: tab === "discover" && !activeViewer && !compareMode,
+    hasMore,
+    loading: loadingMore || browseLoading,
+    onLoadMore: loadMore,
+  });
+
+  useScrollSmoother(smoothWrapperRef, smoothContentRef, scrollSmootherEnabled);
+
+  // Keep fetching when filters hide everything but GitHub has more repos.
+  useEffect(() => {
+    if (tab !== "discover" || browseLoading || loadingMore || !hasMore) return;
+
+    const allFilteredOut = visibleFamilies.length === 0 && families.length > 0;
+    const sparseResults = visibleFamilies.length < MIN_VISIBLE_BEFORE_AUTO_LOAD;
+
+    if ((allFilteredOut || sparseResults) && autoLoadAttempts.current < MAX_AUTO_LOAD_PAGES) {
+      autoLoadAttempts.current += 1;
+      void loadDiscover(
+        discoverPage + 1,
+        discoverTopic,
+        true,
+        discoverTreasure,
+        discoverLane,
+        discoverVariant,
+      );
+    }
+  }, [
+    tab,
+    browseLoading,
+    loadingMore,
+    hasMore,
+    visibleFamilies.length,
+    families.length,
+    fmtFilters,
+    discoverFilters,
+    sortBy,
+    discoverPage,
+    discoverTopic,
+    discoverTreasure,
+    discoverLane,
+    discoverVariant,
+    loadDiscover,
+  ]);
 
   function changeTopic(t: string) {
     setDiscoverTopic(t);
     setFamilies([]);
-    setDiscoverPage(1);
+    resetDiscoverCursor();
     syncUrl({ topic: t === "font" ? null : t });
-    void loadDiscover(1, t, false);
+    void loadDiscover(1, t, false, discoverTreasure, "files", 0);
   }
 
   function surpriseMe() {
-    if (families.length === 0) return;
-    const pick = families[Math.floor(Math.random() * families.length)];
+    if (visibleFamilies.length === 0) return;
+    const pick = visibleFamilies[Math.floor(Math.random() * visibleFamilies.length)];
     openViewer(mergeFont(pick));
     toast.success(`Surprise: ${pick.family}`);
   }
@@ -402,7 +636,8 @@ export default function Home() {
       else if (e.key.toLowerCase() === "r" && tab === "discover") surpriseMe();
       else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         // list navigation
-        const listCount = tab === "discover" ? families.length : data?.results.length ?? 0;
+        const listCount =
+          tab === "discover" ? visibleFamilies.length : data?.results.length ?? 0;
         if (listCount === 0) return;
         e.preventDefault();
         setFocusedIndex((i) => {
@@ -410,7 +645,7 @@ export default function Home() {
           return Math.max(0, Math.min(listCount - 1, next < 0 ? 0 : next));
         });
       } else if (e.key === "Enter" && focusedIndex >= 0) {
-        if (tab === "discover") openViewer(mergeFont(families[focusedIndex]));
+        if (tab === "discover") openViewer(mergeFont(visibleFamilies[focusedIndex]));
         else if (data?.results[focusedIndex])
           openViewer({
             family: data.results[focusedIndex].fileName,
@@ -452,9 +687,10 @@ export default function Home() {
         fileName: r.fileName,
         format: r.format,
         repository: r.repository,
+        branch: r.branch,
         path: r.path,
         license: r.licenseName,
-        rawUrl: rawUrlOf(r.repository, "main", r.path),
+        rawUrl: rawUrlOf(r.repository, r.branch ?? "main", r.path),
       } as ViewerFont,
     })),
     ...library.map((l) => ({
@@ -471,507 +707,452 @@ export default function Home() {
     })),
   ];
 
-  // --- Derived filtered/sorted families (issue 13) ---
-  const visibleFamilies = applyFilterSort(families, fmtFilters, sortBy);
+  const sidebar = (
+    <AppSidebar
+      tab={tab}
+      onTabChange={handleTabChange}
+      query={query}
+      setQuery={setQuery}
+      mode={mode}
+      setMode={setMode}
+      loading={loading}
+      onSearch={runSearch}
+      previewText={previewText}
+      setPreviewText={setPreviewText}
+      discoverTopic={discoverTopic}
+      onTopicChange={changeTopic}
+      onSurprise={surpriseMe}
+      fmtFilters={fmtFilters}
+      setFmtFilters={setFmtFilters}
+      discoverFilters={discoverFilters}
+      setDiscoverFilters={setDiscoverFilters}
+      onResetDiscover={resetDiscoverSettings}
+      onRareMode={enableRareHunt}
+      onPopularMode={enablePopularMode}
+      sortBy={sortBy}
+      setSortBy={setSortBy}
+      discoveredCount={visibleFamilies.length}
+      loadedFamiliesCount={families.length}
+      resultCount={data?.results.length ?? 0}
+      totalMatches={data?.totalCount}
+      libraryCount={library.length}
+      topicInputRef={topicInputRef}
+      searchInputRef={searchInputRef}
+      onShowHelp={() => setShowHelp(true)}
+      className={
+        scrollSmootherEnabled
+          ? "fixed inset-y-0 left-0 z-50 h-screen w-[17.5rem] border-b-0"
+          : undefined
+      }
+    />
+  );
+
+  const topBar = (
+    <AppTopBar
+      title={headerTitle({
+        tab,
+        activeViewer,
+        compareMode,
+      })}
+      subtitle={headerSubtitle({
+        tab,
+        activeViewer,
+        compareMode,
+        discoveredCount: visibleFamilies.length,
+        resultCount: data?.results.length ?? 0,
+        totalMatches: data?.totalCount,
+        libraryCount: library.length,
+        discoverTopic,
+      })}
+      onBack={
+        activeViewer
+          ? () => {
+              if (compareMode) setCompareMode(false);
+              else closeViewer();
+            }
+          : undefined
+      }
+      tools={
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Keyboard shortcuts"
+            className="rounded-xl border-border bg-background/80"
+            onClick={() => setShowHelp(true)}
+          >
+            <HelpCircle className="size-4" />
+          </Button>
+          <ModeToggle />
+        </>
+      }
+    />
+  );
+
+  const feedPanel = (
+    <GsapTabPanel
+      panelKey={
+        activeViewer ? (compareMode ? "compare" : "viewer") : tab
+      }
+      className={scrollSmootherEnabled ? undefined : "h-full"}
+    >
+      {activeViewer && compareMode ? (
+        <FontCompare
+          left={activeViewer}
+          onSelectRight={handleCompareSelect}
+          options={compareOptions}
+          onClose={() => setCompareMode(false)}
+        />
+      ) : activeViewer ? (
+        <FontViewer
+          font={activeViewer}
+          onClose={closeViewer}
+          hideCompare={false}
+        />
+      ) : tab === "discover" ? (
+        <DiscoverView
+          families={visibleFamilies}
+          totalBeforeFilter={families.length}
+          loading={browseLoading}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
+          error={discoverError}
+          previewText={previewText}
+          topic={discoverTopic}
+          treasureMode={discoverTreasure}
+          discoverPage={discoverPage}
+          reposFetchedTotal={reposFetchedTotal}
+          githubTotalCount={githubTotalCount}
+          onLoadMore={loadMore}
+          loadSentinelRef={loadSentinelRef}
+          onOpenViewer={(f) => openViewer(mergeFont(f))}
+          onRetry={() => void loadDiscover(1, discoverTopic, false, discoverTreasure)}
+          onResetTopic={() => changeTopic("font")}
+          onTopicChange={changeTopic}
+          onToggleMode={discoverTreasure ? enablePopularMode : enableRareHunt}
+        />
+      ) : tab === "search" ? (
+        <SearchView
+          data={data}
+          error={error}
+          loading={loading}
+          previewText={searchPreviewText}
+          onOpenViewer={(r) =>
+            openViewer({
+              family: r.fileName,
+              fileName: r.fileName,
+              format: r.format,
+              repository: r.repository,
+              branch: r.branch,
+              path: r.path,
+              license: r.licenseName,
+              rawUrl: rawUrlOf(r.repository, r.branch ?? "main", r.path),
+            })
+          }
+        />
+      ) : (
+        <LibraryView
+          fonts={library}
+          loading={libraryLoading}
+          previewText={previewText}
+          onOpenViewer={(l) =>
+            openViewer(
+              {
+                id: l.id,
+                family: l.realFamily ?? l.family,
+                realFamily: l.realFamily,
+                fileName: l.family,
+                format: l.format,
+                license: l.license ?? undefined,
+                publicPath: l.publicPath ?? undefined,
+                weight: l.weight,
+                style: l.style,
+                isVariable: l.isVariable,
+                designer: l.designer,
+              },
+              true,
+            )
+          }
+          onDelete={deleteFromLibrary}
+        />
+      )}
+    </GsapTabPanel>
+  );
 
   return (
-    <div className="flex flex-1 flex-col items-center px-4 py-8 sm:py-10">
-      <main className="flex w-full max-w-3xl flex-col gap-6">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="font-heading text-3xl font-semibold tracking-tight">fontgrep</h1>
-            <p className="text-sm text-muted-foreground">
-              Discover, search and curate open-source fonts via the GitHub code index.
-            </p>
+    <div className="min-h-screen bg-background text-foreground">
+      {scrollSmootherEnabled ? (
+        <>
+          {sidebar}
+          <div id="smooth-wrapper" ref={smoothWrapperRef}>
+            <div id="smooth-content" ref={smoothContentRef}>
+              <main className="pl-[17.5rem]">
+                {topBar}
+                <section
+                  className={cn(
+                    "px-3 py-2 md:px-4 md:py-3",
+                    FEED_SURFACE,
+                  )}
+                >
+                  {feedPanel}
+                </section>
+              </main>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Keyboard shortcuts"
-              onClick={() => setShowHelp(true)}
+        </>
+      ) : (
+        <div className="flex h-screen flex-col overflow-hidden lg:flex-row">
+          {sidebar}
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {topBar}
+            <section
+              ref={feedScrollRef}
+              className={cn(
+                "min-h-0 flex-1",
+                feedSurface
+                  ? cn(
+                      "overflow-y-auto overscroll-y-contain px-3 py-2 md:px-4 md:py-3",
+                      FEED_SURFACE,
+                    )
+                  : "p-4 md:p-6",
+              )}
             >
-              <HelpCircle className="size-4" />
-            </Button>
-            <ModeToggle />
-          </div>
-        </header>
-
-        {activeViewer && compareMode ? (
-          <FontCompare
-            left={activeViewer}
-            onSelectRight={handleCompareSelect}
-            options={compareOptions}
-            onClose={() => setCompareMode(false)}
-          />
-        ) : activeViewer ? (
-          <FontViewer
-            font={activeViewer}
-            onClose={closeViewer}
-            hideCompare={false}
-          />
-        ) : (
-          <>
-            <Tabs value={tab} onValueChange={handleTabChange}>
-              <TabsList className="overflow-x-auto">
-                <TabsTrigger value="discover" data-icon="inline-start">
-                  <Sparkles className="size-4" />
-                  Discover
-                </TabsTrigger>
-                <TabsTrigger value="search" data-icon="inline-start">
-                  <Search className="size-4" />
-                  Search
-                </TabsTrigger>
-                <TabsTrigger value="library" data-icon="inline-start">
-                  <Keyboard className="size-4" />
-                  Library
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            {tab === "discover" ? (
-              <DiscoverView
-                families={visibleFamilies}
-                loading={browseLoading}
-                loadingMore={loadingMore}
-                hasMore={hasMore}
-                error={discoverError}
-                topic={discoverTopic}
-                fmtFilters={fmtFilters}
-                setFmtFilters={setFmtFilters}
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-                onLoadMore={loadMore}
-                onSurprise={surpriseMe}
-                onTopicChange={changeTopic}
-                onOpenViewer={(f) => openViewer(mergeFont(f))}
-                onRetry={() => void loadDiscover(1, discoverTopic, false)}
-                topicInputRef={topicInputRef}
-              />
-            ) : tab === "search" ? (
-              <SearchView
-                query={query}
-                setQuery={setQuery}
-                mode={mode}
-                setMode={setMode}
-                loading={loading}
-                data={data}
-                error={error}
-                onSearch={runSearch}
-                onOpenViewer={(font) => openViewer(font)}
-                searchInputRef={searchInputRef}
-              />
-            ) : (
-              <LibraryView
-                fonts={library}
-                loading={libraryLoading}
-                onOpenViewer={(l) =>
-                  openViewer(
-                    {
-                      id: l.id,
-                      family: l.realFamily ?? l.family,
-                      fileName: l.family,
-                      format: l.format,
-                      license: l.license ?? undefined,
-                      publicPath: l.publicPath ?? undefined,
-                      isVariable: l.isVariable,
-                    },
-                    true
-                  )
-                }
-                onDelete={deleteFromLibrary}
-              />
-            )}
-          </>
-        )}
-      </main>
+              {feedPanel}
+            </section>
+          </main>
+        </div>
+      )}
 
       {showHelp && <ShortcutsHelp onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
 
-function applyFilterSort(
-  families: DiscoveredFontFamily[],
-  fmtFilters: Set<string>,
-  sortBy: "relevance" | "name" | "stars"
-) {
-  let out = families;
-  if (fmtFilters.size > 0) {
-    out = out.filter((f) => f.styles.some((s) => fmtFilters.has(s.format)));
+function headerTitle({
+  tab,
+  activeViewer,
+  compareMode,
+}: {
+  tab: TabId;
+  activeViewer: ViewerFont | null;
+  compareMode: boolean;
+}): string {
+  if (compareMode) return "Compare";
+  if (activeViewer) return activeViewer.realFamily ?? activeViewer.family;
+  if (tab === "discover") return "Discover";
+  if (tab === "search") return "Search";
+  return "Library";
+}
+
+function headerSubtitle({
+  tab,
+  activeViewer,
+  compareMode,
+  discoveredCount,
+  resultCount,
+  totalMatches,
+  libraryCount,
+  discoverTopic,
+}: {
+  tab: TabId;
+  activeViewer: ViewerFont | null;
+  compareMode: boolean;
+  discoveredCount: number;
+  resultCount: number;
+  totalMatches?: number;
+  libraryCount: number;
+  discoverTopic: string;
+}): string {
+  if (compareMode && activeViewer) {
+    return `${activeViewer.family} · pick a second font`;
   }
-  if (sortBy === "name") out = [...out].sort((a, b) => a.family.localeCompare(b.family));
-  else if (sortBy === "stars") out = [...out].sort((a, b) => b.stars - a.stars);
-  return out;
+  if (activeViewer) {
+    const repo = activeViewer.repository ?? "Saved font";
+    const detail = activeViewer.path ?? activeViewer.format;
+    return `${repo} · ${detail}`;
+  }
+  if (tab === "discover") {
+    if (discoveredCount > 0) {
+      return `${discoveredCount} ${discoveredCount === 1 ? "family" : "families"} · topic ${discoverTopic}`;
+    }
+    return `Topic ${discoverTopic} · scroll to wander`;
+  }
+  if (tab === "search") {
+    if (totalMatches != null) {
+      return `${totalMatches.toLocaleString()} matches · showing ${resultCount}`;
+    }
+    return "Run a search from the sidebar";
+  }
+  return `${libraryCount} saved ${libraryCount === 1 ? "font" : "fonts"}`;
 }
 
 function DiscoverView({
   families,
+  totalBeforeFilter,
   loading,
   loadingMore,
   hasMore,
   error,
+  previewText,
   topic,
-  fmtFilters,
-  setFmtFilters,
-  sortBy,
-  setSortBy,
+  treasureMode,
+  discoverPage,
+  reposFetchedTotal,
+  githubTotalCount,
   onLoadMore,
-  onSurprise,
-  onTopicChange,
+  loadSentinelRef,
   onOpenViewer,
   onRetry,
-  topicInputRef,
+  onResetTopic,
+  onTopicChange,
+  onToggleMode,
 }: {
   families: DiscoveredFontFamily[];
+  totalBeforeFilter: number;
   loading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   error: string | null;
+  previewText: string;
   topic: string;
-  fmtFilters: Set<string>;
-  setFmtFilters: (s: Set<string>) => void;
-  sortBy: "relevance" | "name" | "stars";
-  setSortBy: (s: "relevance" | "name" | "stars") => void;
+  treasureMode: boolean;
+  discoverPage: number;
+  reposFetchedTotal: number;
+  githubTotalCount: number | null;
   onLoadMore: () => void;
-  onSurprise: () => void;
-  onTopicChange: (t: string) => void;
+  loadSentinelRef: React.RefObject<HTMLDivElement | null>;
   onOpenViewer: (f: DiscoveredFontFamily) => void;
   onRetry: () => void;
-  topicInputRef: React.RefObject<HTMLInputElement | null>;
+  onResetTopic: () => void;
+  onTopicChange: (topic: string) => void;
+  onToggleMode: () => void;
 }) {
-  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
-    const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) onLoadMore();
+  if (error) {
+    return (
+      <SpecimenEmptyCard title="Discover failed" description={error}>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      </SpecimenEmptyCard>
+    );
   }
 
-  function toggleFmt(fmt: string) {
-    const next = new Set(fmtFilters);
-    if (next.has(fmt)) next.delete(fmt);
-    else next.add(fmt);
-    setFmtFilters(next);
+  if (loading && families.length === 0) {
+    return <DiscoverLoadingPins />;
   }
 
-  const formats = ["ttf", "otf", "woff2", "variable", "svg"];
+  if (families.length === 0) {
+    if (loadingMore) {
+      return <DiscoverLoadingPins />;
+    }
+    return (
+      <SpecimenEmptyCard
+        title={
+          totalBeforeFilter > 0 ? "No fonts match filters" : `No fonts for “${topic}”`
+        }
+        description={
+          totalBeforeFilter > 0
+            ? hasMore
+              ? "Still paging through GitHub repos for families that pass your filters."
+              : "This GitHub search returned no more pages. Try another topic or switch to Popular mode."
+            : topic === "font"
+              ? "GitHub returned no font files. Restart the dev server if you recently added GITHUB_TOKEN, then retry."
+              : `GitHub has no font repos tagged topic:${topic}, or none contain font files. Pick a topic chip below (e.g. display, monospace) or reset to the default.`
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          {topic !== "font" && (
+            <Button variant="default" size="sm" onClick={onResetTopic}>
+              Try topic “font”
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      </SpecimenEmptyCard>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <form
-          className="flex flex-1 gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onTopicChange(topic);
-          }}
-        >
-          <Input
-            ref={topicInputRef}
-            value={topic}
-            onChange={(e) => onTopicChange(e.target.value)}
-            placeholder="Topic (e.g. monospace, display)"
-            aria-label="Discover topic"
-          />
-          <Button type="submit" size="sm">
-            Search
-          </Button>
-        </form>
-        <Button variant="outline" size="sm" onClick={onSurprise} data-icon="inline-start">
-          <Sparkles className="size-4" />
-          Surprise me
-        </Button>
+    <div className="pb-8">
+      <FontBentoGrid
+        families={families}
+        onOpenViewer={onOpenViewer}
+      />
+
+      <div className="px-4 mt-3">
+        <DiscoveryFooter
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          topic={topic}
+          treasureMode={treasureMode}
+          reposFetchedTotal={reposFetchedTotal}
+          githubTotalCount={githubTotalCount}
+          visibleCount={families.length}
+          onLoadMore={onLoadMore}
+          loadSentinelRef={loadSentinelRef}
+          onTopicChange={onTopicChange}
+          onToggleMode={onToggleMode}
+        />
       </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        {TOPIC_CHIPS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => onTopicChange(c)}
-            className={
-              "rounded-full border px-2.5 py-1 text-xs transition-colors " +
-              (topic === c
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background hover:bg-muted")
-            }
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      <Separator />
-
-      {/* Filter & sort (issue 13) */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {formats.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => toggleFmt(f)}
-              className={
-                "rounded-md border px-2 py-0.5 text-xs capitalize transition-colors " +
-                (fmtFilters.has(f)
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-background hover:bg-muted")
-              }
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-        <select
-          className="ml-auto rounded-md border bg-background px-2 py-1 text-xs"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as "relevance" | "name" | "stars")}
-          aria-label="Sort by"
-        >
-          <option value="relevance">Relevance</option>
-          <option value="name">Name A–Z</option>
-          <option value="stars">Stars</option>
-        </select>
-        {fmtFilters.size > 0 && (
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setFmtFilters(new Set())}
-          >
-            Clear filters
-          </Button>
-        )}
-      </div>
-
-      {error ? (
-        <Card className="ring-destructive/30">
-          <CardContent className="flex flex-col gap-2 py-4 text-sm text-destructive">
-            <span>{error}</span>
-            <Button variant="outline" size="sm" onClick={onRetry} className="w-fit">
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : loading && families.length === 0 ? (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : families.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">
-            {families.length} font {families.length === 1 ? "family" : "families"} discovered
-            {hasMore && " · scroll for more"}
-          </p>
-          <ScrollArea className="h-[55vh] rounded-lg border" onScrollCapture={handleScroll}>
-            <ul className="flex flex-col divide-y">
-              {families.map((f, i) => (
-                <li
-                  key={`${f.repository}-${f.family}-${i}`}
-                  className="cursor-pointer p-3 transition-colors hover:bg-muted/50"
-                  onClick={() => onOpenViewer(f)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{f.family}</span>
-                      <span className="text-xs text-muted-foreground">{f.repository}</span>
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                        <Badge variant="outline" className="capitalize">
-                          {f.styles.length} {f.styles.length === 1 ? "style" : "styles"}
-                        </Badge>
-                        {f.styles.slice(0, 4).map((s, idx) => (
-                          <Badge key={idx} variant={FORMAT_VARIANT[s.format]}>
-                            {styleLabel(s)}
-                          </Badge>
-                        ))}
-                        {f.license && (
-                          <Badge variant="secondary">
-                            <Scale className="size-3" />
-                            {f.license}
-                          </Badge>
-                        )}
-                        {f.stars > 0 && (
-                          <span className="text-xs text-muted-foreground">★ {f.stars}</span>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-icon="inline-start"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenViewer(f);
-                      }}
-                    >
-                      <Eye className="size-4" />
-                      View
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {loadingMore && (
-              <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Loading more…
-              </div>
-            )}
-          </ScrollArea>
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground">
-            No fonts discovered. Set GITHUB_TOKEN in .env to fetch from GitHub.
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
 
 function SearchView({
-  query,
-  setQuery,
-  mode,
-  setMode,
-  loading,
   data,
   error,
-  onSearch,
+  loading,
+  previewText,
   onOpenViewer,
-  searchInputRef,
 }: {
-  query: string;
-  setQuery: (q: string) => void;
-  mode: FontSearchMode;
-  setMode: (m: FontSearchMode) => void;
-  loading: boolean;
   data: SearchResponse | null;
   error: string | null;
-  onSearch: () => void;
-  onOpenViewer: (font: ViewerFont) => void;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
+  loading: boolean;
+  previewText: string;
+  onOpenViewer: (font: FontDiscoveryResult) => void;
 }) {
+  if (loading && !data) {
+    return <LoadingGrid label="Searching fonts" />;
+  }
+
+  if (error) {
+    return (
+      <SpecimenEmptyCard title="Search failed" description={error} />
+    );
+  }
+
+  if (!data) {
+    return (
+      <SpecimenEmptyCard
+        title="Search the GitHub code index"
+        description="Enter a term in the navigation panel. The same text becomes the live font preview in each result card."
+      />
+    );
+  }
+
+  if (data.results.length === 0) {
+    return (
+      <SpecimenEmptyCard
+        title="No results"
+        description="Nothing matched your search. Try a different term or switch the search mode."
+      />
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3">
-      <Tabs value={mode} onValueChange={(v) => setMode(v as FontSearchMode)}>
-        <TabsList className="overflow-x-auto">
-          {SEARCH_MODES.map((m) => (
-            <TabsTrigger key={m.value} value={m.value} data-icon="inline-start">
-              {m.icon}
-              {m.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      <form
-        className="flex flex-col gap-2 sm:flex-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void onSearch();
-        }}
-      >
-        <Input
-          ref={searchInputRef}
-          placeholder={
-            mode === "css"
-              ? "font-family name (e.g. Inter)"
-              : mode === "license"
-                ? "license term (e.g. OFL)"
-                : "font name or keyword"
-          }
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search query"
-        />
-        <Button type="submit" disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-          Search
-        </Button>
-      </form>
-
-      <Separator />
-
-      {error && (
-        <Card className="ring-destructive/30">
-          <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
-        </Card>
-      )}
-
-      {data && data.results.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">
-            {data.totalCount.toLocaleString()} total matches · showing {data.results.length}
-          </p>
-          <ScrollArea className="h-[55vh] rounded-lg border">
-            <ul className="flex flex-col divide-y">
-              {data.results.map((r, i) => (
-                <li
-                  key={`${r.repository}-${r.path}-${i}`}
-                  className="cursor-pointer p-3 transition-colors hover:bg-muted/50"
-                  onClick={() =>
-                    onOpenViewer({
-                      family: r.fileName,
-                      fileName: r.fileName,
-                      format: r.format,
-                      repository: r.repository,
-                      path: r.path,
-                      license: r.licenseName,
-                    })
-                  }
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{r.fileName}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {r.repository} · {r.path}
-                      </span>
-                      {r.licenseName && (
-                        <Badge variant="secondary" className="w-fit">
-                          <Scale className="size-3" />
-                          {r.licenseName}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant={FORMAT_VARIANT[r.format]}>{r.format}</Badge>
-                      <a
-                        href={r.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground transition-colors hover:text-foreground"
-                        aria-label={`Open ${r.fileName} on GitHub`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ExternalLink className="size-4" />
-                      </a>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </ScrollArea>
-        </div>
-      )}
-
-      {data && data.results.length === 0 && !loading && (
-        <Card>
-          <CardHeader>
-            <CardTitle>No results</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Nothing matched your search. Try a different term or switch the search mode.
-          </CardContent>
-        </Card>
-      )}
-
-      {!data && !loading && !error && (
-        <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground">
-            Dig into the raw GitHub code index. Needs a GITHUB_TOKEN for results.
-          </CardContent>
-        </Card>
-      )}
+    <div className="w-full">
+      <FontCardGrid>
+        {data.results.map((font, index) => (
+          <SearchFontCard
+            key={`${font.repository}-${font.path}-${index}`}
+            font={font}
+            previewText={previewText}
+            onOpenViewer={onOpenViewer}
+          />
+        ))}
+      </FontCardGrid>
     </div>
   );
 }
@@ -979,91 +1160,281 @@ function SearchView({
 function LibraryView({
   fonts,
   loading,
+  previewText,
   onOpenViewer,
   onDelete,
 }: {
   fonts: LibraryFont[];
   loading: boolean;
+  previewText: string;
   onOpenViewer: (f: LibraryFont) => void;
   onDelete: (id: number) => void;
 }) {
   if (loading) {
-    return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-lg" />
-        ))}
-      </div>
-    );
+    return <LoadingGrid label="Loading library" />;
   }
+
   if (fonts.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-6 text-sm text-muted-foreground">
-          No saved fonts yet. Browse Discover to find some.
-        </CardContent>
-      </Card>
+      <SpecimenEmptyCard
+        title="No saved fonts yet"
+        description="Browse Discover to find some."
+      />
     );
   }
+
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
-        {fonts.length} saved {fonts.length === 1 ? "font" : "fonts"}
-      </p>
-      <ScrollArea className="h-[60vh] rounded-lg border">
-        <ul className="flex flex-col divide-y">
-          {fonts.map((f) => (
-            <li
-              key={f.id}
-              className="flex cursor-pointer items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/50"
-              onClick={() => onOpenViewer(f)}
-            >
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="truncate font-medium">{f.realFamily ?? f.family}</span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="uppercase">
-                    {f.format}
-                  </Badge>
-                  {f.isVariable && <Badge variant="outline">Variable</Badge>}
-                  {f.license && (
-                    <Badge variant="secondary">
-                      <Scale className="size-3" />
-                      {f.license}
-                    </Badge>
-                  )}
-                  {f.designer && (
-                    <span className="text-xs text-muted-foreground">{f.designer}</span>
-                  )}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-icon="inline-start"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenViewer(f);
-                  }}
-                >
-                  <Eye className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Delete font"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete "${f.realFamily ?? f.family}"?`)) onDelete(f.id);
-                  }}
-                >
-                  <Trash2 className="size-4 text-destructive" />
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </ScrollArea>
+    <div className="w-full">
+      <FontCardGrid>
+        {fonts.map((font) => (
+          <LibraryFontCard
+            key={font.id}
+            font={font}
+            previewText={previewText}
+            onOpenViewer={onOpenViewer}
+            onDelete={onDelete}
+          />
+        ))}
+      </FontCardGrid>
     </div>
   );
 }
+
+function FontCardGrid({ children }: { children: React.ReactNode }) {
+  const count = Children.count(children);
+  const gridRef = useGsapScrollReveal<HTMLDivElement>([count]);
+
+  return (
+    <div
+      ref={gridRef}
+      className={cn(CARD_GRID_CLASS, "pb-6")}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SpecimenEmptyCard({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="w-full max-w-lg rounded-2xl bg-[#eaeaea] p-5 dark:bg-[#1c1c1c]">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#777]">
+        Status
+      </p>
+      <h3 className="mt-2 text-lg font-semibold tracking-tight">{title}</h3>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+      {children ? <div className="mt-4 flex flex-wrap gap-2">{children}</div> : null}
+    </div>
+  );
+}
+
+function SearchFontCard({
+  font,
+  previewText,
+  onOpenViewer,
+}: {
+  font: FontDiscoveryResult;
+  previewText: string;
+  onOpenViewer: (font: FontDiscoveryResult) => void;
+}) {
+  return (
+    <BentoFontCard
+      fontLabel={font.fileName}
+      styleLabel={font.format.toUpperCase()}
+      onClick={() => onOpenViewer(font)}
+      className="min-h-[175px] md:min-h-[190px]"
+      preview={
+        <FontPreviewText
+          family={font.fileName}
+          repository={font.repository}
+          branch={font.branch}
+          path={font.path}
+          format={font.format}
+          sample={previewText}
+          cardLine
+          className="break-words text-foreground text-[clamp(2.6rem,5.5vw,4.25rem)] leading-[0.88] tracking-[-0.015em]"
+          lazy
+        />
+      }
+      footer={
+        <div
+          className="mt-3 flex items-center gap-2 text-[10px] text-muted-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Badge data-card-footer variant={FORMAT_VARIANT[font.format]} className="text-[9px]">
+            {font.format}
+          </Badge>
+          <a
+            data-card-footer
+            href={font.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-mono uppercase tracking-widest hover:text-foreground"
+          >
+            GitHub <ExternalLink className="size-3" />
+          </a>
+        </div>
+      }
+    />
+  );
+}
+
+function LibraryFontCard({
+  font,
+  previewText,
+  onOpenViewer,
+  onDelete,
+}: {
+  font: LibraryFont;
+  previewText: string;
+  onOpenViewer: (f: LibraryFont) => void;
+  onDelete: (id: number) => void;
+}) {
+  const title = font.realFamily ?? font.family;
+
+  return (
+    <BentoFontCard
+      fontLabel={title}
+      styleLabel={font.isVariable ? "Variable" : font.format.toUpperCase()}
+      onClick={() => onOpenViewer(font)}
+      className="min-h-[175px] md:min-h-[190px]"
+      preview={
+        <FontPreviewText
+          family={title}
+          format={font.format}
+          publicPath={font.publicPath ?? undefined}
+          sample={previewText}
+          cardLine
+          className="break-words text-foreground text-[clamp(2.6rem,5.5vw,4.25rem)] leading-[0.88] tracking-[-0.015em]"
+          lazy
+        />
+      }
+      footer={
+        <div
+          className="mt-3 flex items-center gap-2 text-[10px] text-muted-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button
+            data-card-footer
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="text-destructive hover:text-destructive"
+            data-icon="inline-start"
+            onClick={() => {
+              if (confirm(`Delete "${title}"?`)) onDelete(font.id);
+            }}
+          >
+            <Trash2 /> Delete
+          </Button>
+          {font.isVariable && (
+            <Badge data-card-footer variant="outline" className="text-[9px]">
+              Var
+            </Badge>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+function LoadingGrid({ label }: { label: string }) {
+  return (
+    <FontCardGrid>
+      {Array.from({ length: 9 }).map((_, index) => (
+        <div
+          key={index}
+          className="flex min-h-[175px] flex-col justify-between overflow-hidden rounded-2xl bg-[#eaeaea] p-4 text-foreground animate-pulse dark:bg-[#1c1c1c] md:min-h-[190px] md:p-5"
+        >
+          <div className="flex gap-7 text-[10px] uppercase tracking-[1.5px] text-muted-foreground">
+            <div className="h-3 w-12 rounded bg-muted" />
+            <div className="h-3 w-10 rounded bg-muted" />
+          </div>
+          <div className="mt-auto pt-7 text-[clamp(2.5rem,5vw,4rem)] font-medium leading-none text-foreground opacity-30">
+            {label}
+          </div>
+          <div className="mt-3 h-2 w-1/3 rounded bg-muted" />
+        </div>
+      ))}
+    </FontCardGrid>
+  );
+}
+
+function InlineLoader({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" />
+      {label}
+    </div>
+  );
+}
+
+function DiscoveryFooter({
+  hasMore,
+  loadingMore,
+  topic,
+  treasureMode,
+  reposFetchedTotal,
+  githubTotalCount,
+  visibleCount,
+  onLoadMore,
+  loadSentinelRef,
+  onTopicChange,
+  onToggleMode,
+}: {
+  hasMore: boolean;
+  loadingMore: boolean;
+  topic: string;
+  treasureMode: boolean;
+  reposFetchedTotal: number;
+  githubTotalCount: number | null;
+  visibleCount: number;
+  onLoadMore: () => void;
+  loadSentinelRef: React.RefObject<HTMLDivElement | null>;
+  onTopicChange: (topic: string) => void;
+  onToggleMode: () => void;
+}) {
+  if (loadingMore) {
+    return (
+      <div ref={loadSentinelRef} className="min-h-px">
+        <InlineLoader label="Loading more pins" />
+      </div>
+    );
+  }
+
+  if (hasMore) {
+    return (
+      <div
+        ref={loadSentinelRef}
+        className="flex min-h-px flex-col items-center gap-2 py-6"
+        aria-hidden
+      >
+        <Button variant="ghost" size="sm" onClick={onLoadMore}>
+          Load more
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={loadSentinelRef} className="min-h-px">
+    <WanderFeedEnd
+      topic={topic}
+      treasureMode={treasureMode}
+      reposScanned={reposFetchedTotal}
+      fontsShown={visibleCount}
+      githubTotal={githubTotalCount}
+      onTopicChange={onTopicChange}
+      onToggleMode={onToggleMode}
+    />
+    </div>
+  );
+}
+

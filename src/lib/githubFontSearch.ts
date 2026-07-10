@@ -50,30 +50,151 @@ export function normalizeGitHubItem(item: GitHubCodeSearchItem): FontDiscoveryRe
     fileName: item.name,
     url: item.html_url,
     format: detectFontFormat(item.path),
+    branch: item.repository.default_branch,
     licenseName: item.repository.license?.spdx_id || item.repository.license?.name || undefined,
   };
 }
 
-export function githubRepoSearchUrl(query: string, page = 1, perPage = 10): string {
-  const topic = query.trim() || "font";
+export type DiscoverLane = "files" | "repos";
+
+export const DISCOVER_FILES_PER_PAGE = 50;
+/** GitHub code search caps at 1000 results (100/page). */
+export const DISCOVER_FILES_MAX_PAGE = 10;
+
+const FONT_EXTENSIONS_Q =
+  "(extension:woff2 OR extension:ttf OR extension:otf OR extension:woff)";
+/** Code search supports NOT path: — avoid slashes in path literals (use simple segments). */
+const FONT_PATH_EXCLUDES = "NOT path:node_modules NOT path:vendor";
+
+/** Treasure code search: skip mega mirror owners/repos at the source. */
+export const TREASURE_CODE_SEARCH_EXCLUDES = [
+  "-user:google",
+  "-org:googlefonts",
+  "-user:fortawesome",
+  "-org:fortawesome",
+  "-user:fontsource",
+  "-org:fontsource",
+  "-repo:google/fonts",
+  "-repo:fontsource/font-files",
+  "-repo:fortawesome/Font-Awesome",
+  "-repo:fortawesome/Font-Awesome-6",
+  "NOT path:fontawesome",
+  "NOT path:font-awesome",
+  "NOT path:fontello",
+  "NOT path:flaticon",
+  "NOT path:icomoon",
+  "NOT path:icofont",
+  "NOT path:system",
+].join(" ");
+
+export interface RepoSearchOptions {
+  /** Bias toward low-star indie repos; excludes Google mega-collections. */
+  treasure?: boolean;
+}
+
+const DISCOVER_FILE_QUERY_VARIANTS = [
+  (term: string) => `${term} ${FONT_EXTENSIONS_Q} ${FONT_PATH_EXCLUDES}`,
+  (term: string) => `${FONT_EXTENSIONS_Q} ${term} path:fonts ${FONT_PATH_EXCLUDES}`,
+  (term: string) =>
+    `${FONT_EXTENSIONS_Q} ${term} (path:assets OR path:static OR path:public) ${FONT_PATH_EXCLUDES}`,
+  (term: string) => `${FONT_EXTENSIONS_Q} ${term} path:font ${FONT_PATH_EXCLUDES}`,
+  (term: string) => `font ${term} ${FONT_EXTENSIONS_Q} ${FONT_PATH_EXCLUDES}`,
+] as const;
+
+export const DISCOVER_FILE_QUERY_VARIANT_COUNT = DISCOVER_FILE_QUERY_VARIANTS.length;
+
+/** Format a keyword for GitHub search (code + repo). */
+export function formatDiscoverTerm(topic: string): string {
+  const raw = topic.trim() || "font";
+  if (/[\s"]/.test(raw)) return `"${raw.replace(/"/g, '\\"')}"`;
+  return raw;
+}
+
+/** Code search: font binaries across all of GitHub matching a topic/keyword. */
+export function buildDiscoverFilesQuery(
+  topic: string,
+  variant = 0,
+  treasure = false,
+): string {
+  const term = formatDiscoverTerm(topic);
+  const idx =
+    ((variant % DISCOVER_FILE_QUERY_VARIANT_COUNT) + DISCOVER_FILE_QUERY_VARIANT_COUNT) %
+    DISCOVER_FILE_QUERY_VARIANT_COUNT;
+  const base = DISCOVER_FILE_QUERY_VARIANTS[idx](term);
+  return treasure ? `${base} ${TREASURE_CODE_SEARCH_EXCLUDES}` : base;
+}
+
+/** Minimal fallback when a complex code-search query fails to parse. */
+export function buildDiscoverFilesQueryFallback(topic: string): string {
+  const term = formatDiscoverTerm(topic);
+  return `${term} extension:woff2`;
+}
+
+/** Repo search: broad keyword match (not locked to topic: tag). */
+export function buildDiscoverRepoQuery(topic: string, treasure: boolean): string {
+  const term = formatDiscoverTerm(topic);
+  const parts = [term, "font", "in:name,description,readme"];
+  if (treasure) {
+    parts.push(
+      "-user:google",
+      "-org:googlefonts",
+      "-user:fortawesome",
+      "-org:fortawesome",
+      "-user:fontsource",
+      "-org:fontsource",
+      "-user:adobe-fonts",
+      "-org:adobe-fonts",
+    );
+  }
+  return parts.join(" ");
+}
+
+export function githubRepoSearchUrl(
+  query: string,
+  page = 1,
+  perPage = 10,
+  options: RepoSearchOptions = {},
+): string {
+  const q = buildDiscoverRepoQuery(query, options.treasure ?? false);
   const params = new URLSearchParams({
-    q: `topic:${topic} font in:name,description,topics`,
+    q,
     sort: "stars",
-    order: "desc",
+    order: options.treasure ? "asc" : "desc",
     page: String(page),
     per_page: String(Math.min(Math.max(perPage, 1), 100)),
   });
   return `https://api.github.com/search/repositories?${params.toString()}`;
 }
 
-export function githubSearchUrl(query: string, limit = 25): string {
+export function githubSearchUrl(query: string, limit = 25, page = 1): string {
   const params = new URLSearchParams({
     q: query,
     per_page: String(Math.min(Math.max(limit, 1), 100)),
+    page: String(Math.max(1, page)),
     sort: "indexed",
     order: "desc",
   });
   return `https://api.github.com/search/code?${params.toString()}`;
+}
+
+export function codeSearchItemsToFontFiles(
+  items: GitHubCodeSearchItem[],
+): {
+  repository: string;
+  branch: string;
+  license: string | null;
+  stars: number;
+  path: string;
+  format: FontFormat;
+}[] {
+  return items.map((item) => ({
+    repository: item.repository.full_name,
+    branch: item.repository.default_branch ?? "main",
+    license: item.repository.license?.spdx_id ?? null,
+    stars: 0,
+    path: item.path,
+    format: detectFontFormat(item.path),
+  }));
 }
 
 export interface GitHubRepoSearchItem {

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   inferFontInfo,
   groupFonts,
+  gridCardPreviewText,
+  pickGridPreviewStyle,
   styleLabel,
   type FontStyle,
 } from "@/lib/fontFamily";
@@ -85,6 +87,26 @@ describe("groupFonts", () => {
   });
 });
 
+describe("pickGridPreviewStyle", () => {
+  it("prefers 400 normal over italic at the same weight", () => {
+    const styles = [
+      style("Inter-Italic.ttf"),
+      style("Inter-Regular.ttf"),
+      style("Inter-Bold.ttf"),
+    ];
+    const picked = pickGridPreviewStyle(styles)!;
+    expect(picked.fileName).toBe("Inter-Regular.ttf");
+    expect(picked.style).toBe("normal");
+  });
+
+  it("falls back to the first upright cut when regular is missing", () => {
+    const styles = [style("Inter-Bold.ttf"), style("Inter-BoldItalic.ttf")];
+    const picked = pickGridPreviewStyle(styles)!;
+    expect(picked.fileName).toBe("Inter-Bold.ttf");
+    expect(picked.style).toBe("normal");
+  });
+});
+
 describe("styleLabel", () => {
   it("returns Regular for 400 normal", () => {
     expect(styleLabel(style("Inter-Regular.ttf"))).toBe("Regular");
@@ -100,5 +122,24 @@ describe("styleLabel", () => {
   it("returns Variable for variable fonts", () => {
     const s = style("Inter-VF.ttf", "variable");
     expect(styleLabel(s)).toBe("Variable");
+  });
+});
+
+describe("gridCardPreviewText", () => {
+  it("keeps short names intact", () => {
+    expect(gridCardPreviewText("Syne")).toBe("Syne");
+    expect(gridCardPreviewText("IBM Plex Sans")).toBe("IBM Plex Sans");
+  });
+
+  it("strips subset suffixes before truncating", () => {
+    expect(gridCardPreviewText("lxgwwenkaiscreenr subset 11")).toBe(
+      "lxgwwenkaiscr…",
+    );
+  });
+
+  it("fits as many whole words as fit within the limit", () => {
+    expect(gridCardPreviewText("Noto Sans Display Condensed Light")).toBe(
+      "Noto Sans",
+    );
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Slider } from "@/components/ui/slider";
+import { Slider, resolveSliderValue } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import type { VariableAxis } from "@/lib/fontMeta";
 
@@ -15,10 +15,10 @@ export function FontAxisSlider({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className="flex items-center justify-between font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#777]">
         <span>
           {axis.name}{" "}
-          <span className="font-mono text-foreground/70">{axis.tag}</span>
+          <span className="text-foreground">{axis.tag}</span>
         </span>
         <span className="font-mono">{value}</span>
       </div>
@@ -27,7 +27,7 @@ export function FontAxisSlider({
         max={axis.max}
         step={0.1}
         value={[value]}
-        onValueChange={(v) => onChange((v as number[])[0])}
+        onValueChange={(v) => onChange(resolveSliderValue(v))}
       />
       <div className="flex justify-end">
         <Button

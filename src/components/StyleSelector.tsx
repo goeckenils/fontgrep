@@ -1,8 +1,10 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { FontStyle } from "@/lib/fontFamily";
 import { styleLabel } from "@/lib/fontFamily";
+import { metaPill } from "@/lib/viewerTheme";
+import { cn } from "@/lib/utils";
 
 export function StyleSelector({
   styles,
@@ -19,26 +21,20 @@ export function StyleSelector({
       {styles.map((s) => {
         const active = s.path === activePath;
         return (
-          <button
+          <Button
             key={s.path}
             type="button"
+            variant={active ? "secondary" : "outline"}
+            size="xs"
             onClick={() => onSelect(s)}
-            className={
-              "rounded-md border px-2 py-1 text-xs font-medium transition-colors " +
-              (active
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background hover:bg-muted")
-            }
             aria-pressed={active}
           >
             {styleLabel(s)}
-          </button>
+          </Button>
         );
       })}
       {styles.some((s) => s.variable) && (
-        <Badge variant="outline" className="ml-1 self-center">
-          Variable
-        </Badge>
+        <span className={cn(metaPill(), "self-center")}>Variable</span>
       )}
     </div>
   );

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildDiscoverFilesQuery,
+  buildDiscoverRepoQuery,
   buildGitHubFontQuery,
   detectFontFormat,
   normalizeGitHubItem,
@@ -101,11 +103,57 @@ describe("normalizeGitHubItem", () => {
   });
 });
 
+describe("buildDiscoverFilesQuery", () => {
+  it("searches font extensions with the topic keyword", () => {
+    const q = buildDiscoverFilesQuery("display");
+    expect(q).toContain("display");
+    expect(q).toContain("extension:woff2");
+    expect(q).toContain("NOT path:node_modules");
+  });
+
+  it("never uses repo-only qualifiers", () => {
+    for (let variant = 0; variant < 5; variant++) {
+      const q = buildDiscoverFilesQuery("display", variant);
+      expect(q).not.toContain("topic:");
+      expect(q).not.toContain("path:dist/");
+    }
+  });
+
+  it("rotates query variants", () => {
+    expect(buildDiscoverFilesQuery("font", 0)).not.toBe(buildDiscoverFilesQuery("font", 1));
+  });
+
+  it("adds mirror exclusions in treasure mode", () => {
+    const q = buildDiscoverFilesQuery("display", 0, true);
+    expect(q).toContain("-user:google");
+    expect(q).toContain("-user:fortawesome");
+    expect(q).toContain("NOT path:fontawesome");
+    expect(q).toContain("NOT path:fontello");
+    expect(q).toContain("NOT path:flaticon");
+  });
+});
+
+describe("buildDiscoverRepoQuery", () => {
+  it("does not require topic: tag", () => {
+    const q = buildDiscoverRepoQuery("display", false);
+    expect(q).toContain("font");
+    expect(q).toContain("display");
+    expect(q).not.toMatch(/^topic:/);
+    expect(q).not.toContain("in:topics");
+  });
+
+  it("excludes mirror orgs in treasure mode", () => {
+    const q = buildDiscoverRepoQuery("display", true);
+    expect(q).toContain("-user:fortawesome");
+    expect(q).toContain("-user:fontsource");
+  });
+});
+
 describe("githubRepoSearchUrl", () => {
-  it("builds a repository-search url scoped to font topic", () => {
+  it("builds a broad repository-search url", () => {
     const url = githubRepoSearchUrl("font", 1, 5);
     expect(url).toContain("https://api.github.com/search/repositories?");
-    expect(url).toContain("q=topic%3Afont+font");
+    expect(url).toContain("font");
     expect(url).toContain("sort=stars");
     expect(url).toContain("per_page=5");
   });

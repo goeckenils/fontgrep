@@ -157,6 +157,18 @@ export function groupFonts(
   return Array.from(map.values()).sort((a, b) => a.family.localeCompare(b.family));
 }
 
+/** Prefer upright cuts for grid/card previews (never italic/oblique when a normal cut exists). */
+export function pickGridPreviewStyle(styles: FontStyle[]): FontStyle | undefined {
+  if (!styles.length) return undefined;
+  const upright = styles.filter((s) => s.style === "normal");
+  return (
+    upright.find((s) => s.weight === 400) ??
+    upright[0] ??
+    styles.find((s) => s.weight === 400) ??
+    styles[0]
+  );
+}
+
 /** Human-readable style label, e.g. "Bold", "Bold Italic", "Regular". */
 export function styleLabel(style: FontStyle): string {
   if (style.variable) return "Variable";
@@ -182,4 +194,51 @@ const WEIGHT_NAMES: Record<number, string> = {
 
 export function weightName(weight: number): string {
   return WEIGHT_NAMES[weight] ?? String(weight);
+}
+
+/** Max characters in the bento card hero line before we shorten further. */
+export const GRID_PREVIEW_NAME_MAX = 14;
+
+const GRID_NAME_SUFFIX_RE =
+  /\s+(subset\s*\d*|subsets?|vf|variable|static|instances?|fonts?|files?|package|pack)\s*$/i;
+
+/**
+ * Shorten family names for the large card preview — keeps the name, drops junk
+ * suffixes like "subset 11", then fits whole words or truncates runaway tokens.
+ */
+export function gridCardPreviewText(fontName: string): string {
+  let name = fontName.trim().replace(/\s+/g, " ");
+  if (!name) return fontName;
+
+  name = name.replace(GRID_NAME_SUFFIX_RE, "").trim();
+  if (name.length <= GRID_PREVIEW_NAME_MAX) return name;
+
+  const words = name.split(/\s+/);
+  let fitted = "";
+  for (const word of words) {
+    const next = fitted ? `${fitted} ${word}` : word;
+    if (next.length > GRID_PREVIEW_NAME_MAX) break;
+    fitted = next;
+  }
+  if (fitted) return fitted;
+
+  const token = words[0] ?? name;
+  if (token.length <= GRID_PREVIEW_NAME_MAX) return token;
+
+  return `${token.slice(0, GRID_PREVIEW_NAME_MAX - 1)}…`;
+}
+
+/** Scale hero type down when the rendered preview string is still long. */
+export function gridPreviewTypeClass(displayText: string, recipe: string): string {
+  const len = displayText.replace(/…$/, "").length;
+  if (len <= 14) return recipe;
+  const compact =
+    len <= 18
+      ? "text-[clamp(2rem,4.2vw,3.2rem)] leading-[0.9]"
+      : "text-[clamp(1.55rem,3.4vw,2.55rem)] leading-[0.92]";
+  return `${recipe
+    .replace(/text-\[clamp\([^)]+\)\]/, "")
+    .replace(/leading-\[[^\]]+\]|leading-none/, "")
+    .replace(/\s+/g, " ")
+    .trim()} ${compact}`;
 }

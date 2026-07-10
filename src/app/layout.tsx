@@ -29,7 +29,10 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "fontgrep",
   description:
-    "Discover, search and curate open-source fonts via the GitHub code index.",
+    "Wander GitHub for font binaries no catalog lists. Tree-walk repos, group families, preview and save.",
+  icons: {
+    icon: "/assets/fontgrep_logo.svg",
+  },
 };
 
 export default function RootLayout({
@@ -43,8 +46,8 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <body className="flex min-h-full flex-col bg-background text-foreground">
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="fontgrep-theme">
           {children}
           <Toaster />
         </ThemeProvider>

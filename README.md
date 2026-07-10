@@ -1,81 +1,97 @@
-# github-font-indexer (fontgrep)
+# fontgrep
 
-Tool zum Entdecken, Vorschauen und lokal Speichern von Open-Source-Fonts aus GitHub — ohne Google Fonts, ohne System-Fonts.
+GitHub-native font discovery — no Google Fonts, no Adobe catalog, no license gatekeeping.
+
+People commit font binaries to public repos whether or not they're properly licensed. fontgrep walks repo trees, groups families, and lets you **wander** until you stumble on something worth grabbing.
+
+**For:** indie devs, designers, and font nerds who hunt GitHub instead of scrolling catalog homepages.
 
 ## Quick Start
 
 ```bash
-# Deps
 pnpm install
 
-# Env-Vorbereitung (GitHub Token REQUIRED für Discovery/Suche)
 cp .env.example .env
-# Setze GITHUB_TOKEN=<dein token> in .env (fine-grained oder classic PAT)
-# Ohne Token liefert die API github_auth_required (401)
+# GITHUB_TOKEN=<your token> — required for Discover/Search (401 without it)
 
-# Dev-Server
 pnpm dev        # http://localhost:3000
 
-# Tests
 pnpm test       # unit (Vitest)
 pnpm exec playwright test  # E2E
 
-# Quality
 pnpm lint typecheck format
 ```
 
-## Was es macht
+## What it does
 
-fontgrep findet echte Open-Source-Font-Binaries (`.ttf`/`.otf`/`.woff`/`.woff2`) auf GitHub und zeigt sie **direkt als Vorschau** — nicht nur als Repo-Link.
+fontgrep finds real font binaries (`.ttf` / `.otf` / `.woff` / `.woff2`) committed to GitHub and previews them inline — not just repo links.
 
-- **Discover** — nutzt die GitHub **Repository-Search** (`topic:font`, sortiert nach Stars) + die **Git-Tree-API** pro Repo, um echte Font-Dateien zu finden (nicht nur README/LICENSE-Text wie bei der Code-Search). Lädt beim Runterscrollen automatisch weitere Fonts nach (**Infinite Scroll**).
-- **Search** — GitHub Code-Search mit vier Modi (Filename / Extension / CSS @font-face / License), normalisiert zu Format + Repository + Pfad + SPDX-Lizenz.
-- **FontViewer** — klick auf eine Font öffnet den Viewer als **Hauptansicht** (ersetzt die Liste). Preview-Text-Input, Size- & Weight-Slider. **Save font** lädt die Datei herunter.
+### Discover (the product)
 
-### Lokale Speicherung + Dedup
+The core loop. Not "GitHub search with a skin."
 
-- Fonts werden nach **`public/fonts/<uuid>.<ext>`** gespeichert → direkt per URL servierbar (`/fonts/...`), kein API-Roundtrip.
-- SQLite (`data/fontgrep.db`) hält pro Font einen Record mit `public_path` + `source_url`.
-- `source_url` ist **UNIQUE** → Doppelladen wird verhindert (Dedup), keine Clutter.
-- `public/fonts/` und `data/` sind gitignored (lokal, nicht im Repo).
+- **Tree-walking** — scans repo trees via the Git Tree API to find binaries buried in `assets/`, `dist/`, and random folders that code search misses
+- **Family intelligence** — groups files into families, dedupes across repos, surfaces variable fonts
+- **Serendipity** — infinite scroll + topic chips + Treasure mode (indie repos, hidden gems, no mega-mirrors) so you wander into fonts you weren't querying for
+- **Surprise** — opens a random font from the current board
 
-## Tech Stack
+Default mode is **Treasure**: hide Google Fonts mirrors, dedupe families, sort by lowest stars first.
 
-- **Frontend:** Next.js 16 (App Router), TypeScript strict, Tailwind v4, shadcn/ui (base-nova), Lucide
+### Search
+
+GitHub Code Search with four modes (Filename / Extension / CSS @font-face / License). Useful when you know what you're looking for; Discover is for when you don't.
+
+### FontViewer
+
+Click a font → preview with custom text, size/weight sliders. Save to disk for local serving + CSS export.
+
+### Library
+
+Saved fonts from SQLite. Secondary to Discover — procurement, not the main draw.
+
+## Local storage
+
+- Fonts saved to `public/fonts/<uuid>.<ext>` → served at `/fonts/...`
+- SQLite (`data/fontgrep.db`) tracks `public_path` + `source_url` (UNIQUE dedup)
+- `public/fonts/` and `data/` are gitignored
+
+## Tech stack
+
+- **Frontend:** Next.js 16 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, Lucide
 - **Backend:** Next.js Route Handlers + SQLite (better-sqlite3)
-- **Tooling:** pnpm, Vitest, Playwright, Prettier + Tailwind-class-sort
-- **Quality:** ESLint flat, tsc --noEmit, Prettier
+- **Tooling:** pnpm, Vitest, Playwright
 
-## Projektstruktur
+## Project structure
 
 ```
-.
-├── src/app/
-│   ├── api/fonts/
-│   │   ├── discover/route.ts   # Repo-Search + Tree API -> echte Fonts (paginiert)
-│   │   ├── download/route.ts   # Font -> public/fonts/ + DB (dedup via source_url)
-│   │   └── font-search/route.ts # GitHub Code-Search (4 Modi)
-│   └── page.tsx                # Discover | Search Tabs + FontViewer (main view)
-├── src/components/
-│   ├── FontViewer.tsx          # @font-face preview, slider, save
-│   └── ui/                     # shadcn/ui components
-├── src/lib/
-│   ├── db.ts                   # better-sqlite3 singleton + migrations
-│   └── githubFontSearch.ts     # Query-Builder + Tree-Parsing
-├── public/fonts/               # heruntergeladene Fonts (gitignored)
-├── data/                       # SQLite DB (gitignored)
-└── .scratch/                   # Issue-Tracker (local)
+src/app/api/fonts/
+  discover/     # Repo search + tree walk → families (paginated, treasure mode)
+  preview/      # Proxy/preview unsaved fonts
+  download/     # Save to public/fonts + DB
+  library/      # Saved fonts gallery
+  font-search/  # GitHub code search (4 modes)
+src/components/
+  AppSidebar.tsx    # Discover controls, topic chips, treasure toggle
+  FontViewer.tsx    # @font-face preview, save, CSS export
+  FontCompare.tsx   # Side-by-side comparison
+src/lib/
+  fontFilters.ts    # Treasure mode, family dedup, indie filters
+  fontFamily.ts     # Filename → family grouping
+  githubFontSearch.ts
 ```
 
-## Bekannte Limitationen
+## Philosophy
 
-- Discovery nutzt `topic:font` als Default-Query. Eine freie Topic-Eingabe ist noch nicht im UI (hardcoded "font").
-- Viewer rendert die Font erst nach **Save font** (Download in `public/fonts/`). Ein sofortiger Preview-Modus (vor dem Speichern) ist noch nicht implementiert.
-- GitHub Rate-Limits: ohne Token sehr restriktiv. `GITHUB_TOKEN` setzen.
+- **No license line** — if it's committed and public, it's in. License badges are context for you, not gatekeeping.
+- **Anti-catalog** — Google Fonts and Adobe curate; GitHub doesn't. That's the loophole.
+- **Discover > Library** — browsing and stumbling beat shopping and hoarding.
 
-## Lizenz & Status
+## Limitations
 
-- Lizenz: MIT
+- Requires `GITHUB_TOKEN` for GitHub API access
+- GitHub rate limits apply; responses are cached server-side
 - Status: WIP / experimental
 
-> Initialisiert via `bash ~/project-templates/scripts/init-project.sh github-font-indexer`.
+## License
+
+MIT

@@ -17,10 +17,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@gsap/react": "^2.1.2",
     "better-sqlite3": "^11.8.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fontkit": "^2.0.4",
+    "gsap": "^3.15.0",
     "lucide-react": "^1.23.0",
     "motion": "^12.42.2",
     "next": "16.2.10",

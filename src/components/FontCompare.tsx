@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState, type ReactNode } from "react";
+
 import { FontViewer, type ViewerFont } from "@/components/FontViewer";
+import {
+  BENTO_CARD,
+  CONTROL_INPUT,
+  CONTROL_PANEL,
+  SECTION_LABEL,
+} from "@/lib/viewerTheme";
+import { cn } from "@/lib/utils";
 
 export interface CompareFontOption {
   label: string;
@@ -23,7 +29,9 @@ export function FontCompare({
 }) {
   const [right, setRight] = useState<ViewerFont | null>(null);
   const [syncText, setSyncText] = useState(true);
-  const [syncedText, setSyncedText] = useState("The quick brown fox jumps over the lazy dog");
+  const [syncedText, setSyncedText] = useState(
+    "The quick brown fox jumps over the lazy dog",
+  );
   const [syncSize, setSyncSize] = useState(true);
   const [syncedSize, setSyncedSize] = useState(64);
 
@@ -33,36 +41,33 @@ export function FontCompare({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <Button size="sm" variant="ghost" onClick={onClose} data-icon="inline-start">
-          <ArrowLeft className="size-4" /> Back
-        </Button>
-        <div className="flex items-center gap-3 text-xs">
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={syncText}
-              onChange={(e) => setSyncText(e.target.checked)}
-            />
-            Sync text
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={syncSize}
-              onChange={(e) => setSyncSize(e.target.checked)}
-            />
-            Sync size
-          </label>
-        </div>
+    <div className="flex w-full max-w-6xl flex-col gap-4">
+      <div
+        className={cn(
+          CONTROL_PANEL,
+          "flex flex-wrap items-center gap-4 px-4 py-2",
+        )}
+      >
+        <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[#888]">
+          <input
+            type="checkbox"
+            checked={syncText}
+            onChange={(e) => setSyncText(e.target.checked)}
+          />
+          Sync text
+        </label>
+        <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[#888]">
+          <input
+            type="checkbox"
+            checked={syncSize}
+            onChange={(e) => setSyncSize(e.target.checked)}
+          />
+          Sync size
+        </label>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border p-3">
-          <div className="mb-2 truncate text-sm font-medium">
-            {left.family} <span className="text-muted-foreground">· left</span>
-          </div>
+        <ComparePane title={left.family} side="Left">
           <FontViewer
             font={left}
             onClose={() => {}}
@@ -73,13 +78,14 @@ export function FontCompare({
             onSizeChange={setSyncedSize}
             hideCompare
           />
-        </div>
+        </ComparePane>
 
-        <div className="rounded-xl border p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-medium">Right</span>
+        <ComparePane
+          title={right?.realFamily ?? right?.family ?? "Pick a font"}
+          side="Right"
+          action={
             <select
-              className="max-w-[60%] rounded-md border bg-background px-2 py-1 text-xs"
+              className={cn(CONTROL_INPUT, "max-w-full py-1 text-xs")}
               value={right ? right.fileName : ""}
               onChange={(e) => {
                 const opt = options.find((o) => o.font.fileName === e.target.value);
@@ -95,7 +101,8 @@ export function FontCompare({
                 </option>
               ))}
             </select>
-          </div>
+          }
+        >
           {right ? (
             <FontViewer
               font={right}
@@ -108,12 +115,42 @@ export function FontCompare({
               hideCompare
             />
           ) : (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+            <div
+              className={cn(
+                BENTO_CARD,
+                "flex h-40 items-center justify-center text-sm text-muted-foreground",
+              )}
+            >
               Pick a font to compare
             </div>
           )}
-        </div>
+        </ComparePane>
       </div>
+    </div>
+  );
+}
+
+function ComparePane({
+  title,
+  side,
+  action,
+  children,
+}: {
+  title: string;
+  side: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div>
+          <p className={SECTION_LABEL}>{side}</p>
+          <p className="truncate text-sm font-semibold tracking-tight">{title}</p>
+        </div>
+        {action}
+      </div>
+      {children}
     </div>
   );
 }

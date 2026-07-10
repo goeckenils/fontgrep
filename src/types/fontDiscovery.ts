@@ -16,6 +16,7 @@ export interface GitHubCodeSearchItem {
   repository: {
     full_name: string;
     html_url: string;
+    default_branch?: string;
     license?: { key: string; name: string; spdx_id: string } | null;
   };
 }
@@ -26,5 +27,6 @@ export interface FontDiscoveryResult {
   fileName: string;
   url: string;
   format: FontFormat;
+  branch?: string;
   licenseName?: string;
 }

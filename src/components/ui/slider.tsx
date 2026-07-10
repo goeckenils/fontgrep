@@ -2,6 +2,12 @@ import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 
 import { cn } from "@/lib/utils"
 
+/** Base UI passes a number for single-thumb sliders, not always an array. */
+export function resolveSliderValue(value: number | readonly number[]): number {
+  if (typeof value === "number") return value
+  return value[0] ?? 0
+}
+
 function Slider({
   className,
   defaultValue,
